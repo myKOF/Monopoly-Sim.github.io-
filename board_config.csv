@@ -1,0 +1,53 @@
+﻿id,icon,type,name,base_value,upgrade_cost,probability,color_class
+0,🚩,GO,GO,2000,0,1,text-neon-pink font-black
+1,💰,SMALL_GOLD,小獎勵,500,0,1,text-yellow-300
+2,🏢,PROPERTY,稅務局,-500,0,1,text-red-400
+3,🎲,PROPERTY,命運,-200,0,1,text-purple-400
+4,🏠,PROPERTY,地產 A,120,0,1,text-neon-blue
+5,🏡,PROPERTY,地產 B,120,0,1,text-neon-blue
+6,💎,BIG_GOLD,大寶藏,2000,0,1,text-yellow-500 font-bold
+7,✈️,AIRPORT,機場 A,1000,0,0.5,text-yellow-400
+8,🏢,PROPERTY,地產 C,150,0,1,text-neon-blue
+9,🚧,PROPERTY,過路費,-100,0,1,text-red-400
+10,🏢,PROPERTY,地產 D,150,0,1,text-neon-blue
+11,💰,SMALL_GOLD,小獎勵,500,0,1,text-yellow-300
+12,🏢,PROPERTY,地產 E,180,0,1,text-neon-blue
+13,⛓️,JAIL,監獄,0,0,1,text-gray-500
+14,🏢,PROPERTY,地產 F,200,0,1,text-neon-blue
+15,🏢,PROPERTY,地產 G,200,0,1,text-neon-blue
+16,💎,BIG_GOLD,大寶藏,2000,0,1,text-yellow-500 font-bold
+17,🏢,PROPERTY,地產 H,220,0,1,text-neon-blue
+18,🏢,PROPERTY,地產 I,220,0,1,text-neon-blue
+19,🏢,PROPERTY,地產 J,220,0,1,text-neon-blue
+20,✈️,AIRPORT,機場 B,1500,0,0.4,text-yellow-400
+21,🏢,PROPERTY,地產 K,250,0,1,text-neon-blue
+22,💰,SMALL_GOLD,小獎勵,500,0,1,text-yellow-300
+23,🏢,PROPERTY,地產 L,250,0,1,text-neon-blue
+24,🏢,PROPERTY,地產 M,280,0,1,text-neon-blue
+25,🏢,PROPERTY,地產 N,280,0,1,text-neon-blue
+26,🅿️,PARKING,停車場,0,0,1,text-white
+27,🏢,PROPERTY,地產 O,300,0,1,text-neon-blue
+28,🏢,PROPERTY,地產 P,300,0,1,text-neon-blue
+29,💎,BIG_GOLD,大寶藏,2000,0,1,text-yellow-500 font-bold
+30,🏢,PROPERTY,地產 Q,320,0,1,text-neon-blue
+31,🏢,PROPERTY,地產 R,320,0,1,text-neon-blue
+32,🏢,PROPERTY,地產 S,320,0,1,text-neon-blue
+33,✈️,AIRPORT,機場 C,2000,0,0.3,text-yellow-400
+34,🏢,PROPERTY,地產 T,350,0,1,text-neon-blue
+35,💰,SMALL_GOLD,小獎勵,500,0,1,text-yellow-300
+36,🏢,PROPERTY,地產 U,350,0,1,text-neon-blue
+37,🏢,PROPERTY,地產 V,380,0,1,text-neon-blue
+38,🏢,PROPERTY,地產 W,380,0,1,text-neon-blue
+39,👮,GOTOJAIL,入獄,0,0,1,text-red-500
+40,🏢,PROPERTY,地產 X,400,0,1,text-neon-blue
+41,🏢,PROPERTY,地產 Y,400,0,1,text-neon-blue
+42,💎,BIG_GOLD,大寶藏,2000,0,1,text-yellow-500 font-bold
+43,🏢,PROPERTY,地產 Z,420,0,1,text-neon-blue
+44,🏢,PROPERTY,地產 AA,420,0,1,text-neon-blue
+45,🏢,PROPERTY,地產 AB,420,0,1,text-neon-blue
+46,✈️,AIRPORT,機場 D,2500,0,0.2,text-yellow-400
+47,🏢,PROPERTY,地產 AC,450,0,1,text-neon-blue
+48,💰,SMALL_GOLD,小獎勵,500,0,1,text-yellow-300
+49,🏢,PROPERTY,地產 AD,450,0,1,text-neon-blue
+50,🏢,PROPERTY,地產 AE,480,0,1,text-neon-blue
+51,🏢,PROPERTY,地產 AF,480,0,1,text-neon-blue
