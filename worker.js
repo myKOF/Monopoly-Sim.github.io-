@@ -17,7 +17,10 @@ let state = {
     rollCount: 0,
     targetRollCount: 0,
     mode: 'IDLE', // IDLE, AUTO_PLAY, FAST_SIM
-    logId: 0
+    logId: 0,
+    dice: 1000,
+    multiplier: 1,
+    systemConfig: {} // [NEW] Store system config here
 };
 
 // --- Message Handling ---
@@ -28,6 +31,11 @@ self.onmessage = function (e) {
         case 'INIT_GAME':
             state.properties = payload.properties;
             state.collection.config = payload.collectionConfig;
+            // [NEW] Load System Config
+            if (payload.systemConfig) {
+                state.systemConfig = payload.systemConfig;
+            }
+
             // Reset state
             state.turn = 0;
             state.position = 0;
@@ -38,6 +46,14 @@ self.onmessage = function (e) {
             state.collection.level = 1;
             state.collection.points = 0;
             state.collection.totalCollected = 0;
+            state.dice = 1000;
+            state.multiplier = 1;
+            sendUpdate();
+            break;
+
+        case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
+            if (payload.dice !== undefined) state.dice = payload.dice;
+            if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
             sendUpdate();
             break;
 
@@ -114,6 +130,25 @@ function rollDice() {
 }
 
 function execTurn(isAuto) {
+    // Check Dice Shortage
+    if ((state.dice || 0) < (state.multiplier || 1)) {
+        recordLog({
+            turn: state.turn,
+            position: state.position,
+            event: "SYSTEM",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `骰子不足！ (需 ${state.multiplier}, 剩 ${state.dice})`
+        });
+        if (isAuto) stopAutoRoll(false);
+        sendUpdate();
+        return;
+    }
+
+    // Deduct Dice
+    // console.log(`Consuming Dice: ${state.multiplier} (Current: ${state.dice})`);
+    state.dice -= state.multiplier;
+
     state.rollCount++;
     const steps = rollDice();
     state.turn++;
@@ -123,7 +158,7 @@ function execTurn(isAuto) {
 
     // Pass GO logic
     if (state.position < prevPos && prevPos + steps >= BOARD_SIZE) {
-        addMoney(2000, "PASS_GO", "經過起點，獲得 $2000");
+        addMoney(2000 * state.multiplier, "PASS_GO", `經過起點，獲得 $${2000 * state.multiplier} (x${state.multiplier})`);
     }
 
     // Tile Visits
@@ -162,23 +197,27 @@ function handleTileEvent(pos) {
     if (!state.properties || !state.properties[pos]) return;
 
     const tile = state.properties[pos];
+    const mult = state.multiplier; // Check Multiplier
 
     checkCollectionEvent(pos);
 
     if (tile.type === 'PROPERTY') {
-        const val = tile.price;
+        const val = tile.price * mult;
         if (val !== 0) {
             const type = val > 0 ? "INCOME" : "EXPENSE";
             const msg = val > 0 ? `獲得收益 $${val}` : `支付費用 $${Math.abs(val)}`;
-            addMoney(val, type, `${msg} (${tile.name})`);
+            addMoney(val, type, `${msg} (x${mult}, ${tile.name})`);
         }
     } else if (tile.type === 'SMALL_GOLD') {
-        addMoney(tile.price, "SMALL_GOLD", `Small Gold! +$${tile.price}`);
+        const val = tile.price * mult;
+        addMoney(val, "SMALL_GOLD", `Small Gold! +$${val} (x${mult})`);
     } else if (tile.type === 'BIG_GOLD') {
-        addMoney(tile.price, "BIG_GOLD", `Big Gold! +$${tile.price}`);
+        const val = tile.price * mult;
+        addMoney(val, "BIG_GOLD", `Big Gold! +$${val} (x${mult})`);
     } else if (tile.type === 'AIRPORT') {
         if (Math.random() <= tile.probability) {
-            addMoney(tile.price, "AIRPORT", `機場補助！獲得 $${tile.price}`);
+            const val = tile.price * mult;
+            addMoney(val, "AIRPORT", `機場補助！獲得 $${val} (x${mult})`);
         } else {
             recordLog({ turn: state.turn, position: pos, event: 'AIRPORT_FAIL', delta_gold: 0, current_balance: state.money, detail: `機場未發放補助 (機率 ${tile.probability * 100}%)` });
         }
@@ -190,16 +229,24 @@ function handleTileEvent(pos) {
 function checkCollectionEvent(pos) {
     // Logic copied from script.js
     if (state.extraObjects.has(pos)) {
-        state.collection.points++;
-        state.collection.totalCollected = (state.collection.totalCollected || 0) + 1;
+        // [NEW] Scale Points by Multiplier
+        const points = 1 * state.multiplier;
+        state.collection.points += points;
+        state.collection.totalCollected = (state.collection.totalCollected || 0) + points;
 
-        const currentConfig = state.collection.config.find(c => c.level === state.collection.level);
-        if (!currentConfig) return;
+        let currentConfig = state.collection.config.find(c => c.level === state.collection.level);
 
-        if (state.collection.points >= currentConfig.required) {
+        // Loop for multi-level up
+        while (currentConfig && state.collection.points >= currentConfig.required) {
             state.collection.points -= currentConfig.required;
             state.collection.level++;
-            addMoney(currentConfig.gold, "EVENT_REWARD", `活動升級 Lv.${state.collection.level - 1} -> Lv.${state.collection.level}! ${currentConfig.desc}`);
+
+            // Reward
+            const reward = currentConfig.gold * state.multiplier;
+            addMoney(reward, "EVENT_REWARD", `活動升級 Lv.${state.collection.level - 1} -> Lv.${state.collection.level}! ${currentConfig.desc} (x${state.multiplier})`);
+
+            // Update config for next iteration
+            currentConfig = state.collection.config.find(c => c.level === state.collection.level);
         }
     }
 }
@@ -228,16 +275,17 @@ function generateExtraObjects(count) {
     }
 
     // Log comes from worker now
+    const uiName = (state.systemConfig && state.systemConfig.Collect_UI_Name) ? state.systemConfig.Collect_UI_Name : '特殊物件';
     recordLog({
         turn: state.turn,
         position: state.position,
         event: "SYSTEM",
         delta_gold: 0,
         current_balance: state.money,
-        detail: `生成了 ${added} 個額外物件 (🍦) [間距規則已啟用]`
+        detail: `已生成 ${added} 個 ${uiName}`
     });
 
-    sendUpdate(0, true); // Treat extra object gen as "Auto" (instant update)
+    sendUpdate();
 }
 
 function sendUpdate(lastDiceRoll = 0, isAuto = false) {
@@ -253,7 +301,9 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             extraObjects: Array.from(state.extraObjects),
             collection: state.collection,
             diceRoll: lastDiceRoll,
-            isAuto: isAuto
+            isAuto: isAuto,
+            dice: state.dice, // Send back dice
+            multiplier: state.multiplier // Send back multiplier
         }
     });
 }

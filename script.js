@@ -127,6 +127,8 @@ worker.onmessage = function (e) {
         state.tileVisits = payload.tileVisits;
         state.extraObjects = new Set(payload.extraObjects);
         state.collection = payload.collection;
+        if (payload.dice !== undefined) state.dice = payload.dice;
+        if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
 
         updateLogs(payload.logs);
 
@@ -181,7 +183,8 @@ worker.onmessage = function (e) {
                 const tile = state.properties[payload.position];
                 if (tile && tile.type === 'AIRPORT') {
                     // Add score
-                    const bonus = systemConfig.AIRPORT_Value || 50;
+                    const baseBonus = systemConfig.AIRPORT_Value || 50;
+                    const bonus = baseBonus * (state.multiplier || 1); // [FIX] Multiply by multiplier
                     state.tournament.playerScore += bonus;
                     renderTournamentUI();
 
@@ -190,7 +193,7 @@ worker.onmessage = function (e) {
                     logDiv.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
                     logDiv.innerHTML = `
                         <span class="text-gray-600 w-6">#${state.turn}</span>
-                        <span class="flex-1 text-yellow-400 truncate">抵達機場! 積分 +${bonus}</span>
+                        <span class="flex-1 text-yellow-400 truncate">抵達機場! 積分 +${bonus} (x${state.multiplier || 1})</span>
                      `;
                     ui.logContainer.prepend(logDiv);
                 }
@@ -629,6 +632,23 @@ function updateUI() {
         ui.colTarget.textContent = "-";
         ui.colBar.style.width = "100%";
     }
+
+    // [NEW] Update Dice & Multiplier UI
+    const diceInput = document.getElementById('dice-balance');
+    const multiplierSelect = document.getElementById('multiplier-select');
+
+    if (diceInput && document.activeElement !== diceInput) {
+        diceInput.value = state.dice !== undefined ? state.dice : 1000;
+    }
+
+    // Disable Roll Button if insufficient dice
+    if ((state.dice || 0) < (state.multiplier || 1)) {
+        ui.btnRoll.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+        ui.btnRoll.title = "骰子不足 (Insufficient Dice)";
+    } else {
+        ui.btnRoll.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+        ui.btnRoll.title = "";
+    }
 }
 
 function updateStatsUI() {
@@ -761,6 +781,25 @@ function renderTournamentUI() {
             `;
         }).join('');
     }
+}
+
+// --- Dice & Multiplier Logic ---
+const diceInput = document.getElementById('dice-balance');
+const multiplierSelect = document.getElementById('multiplier-select');
+
+if (diceInput && multiplierSelect) {
+    // Init listeners
+    diceInput.addEventListener('change', () => {
+        const val = parseInt(diceInput.value) || 0;
+        state.dice = val; // Optimistic update
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { dice: val } });
+    });
+
+    multiplierSelect.addEventListener('change', () => {
+        const val = parseInt(multiplierSelect.value) || 1;
+        state.multiplier = val; // Optimistic update
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { multiplier: val } });
+    });
 }
 
 // Start
