@@ -121,6 +121,8 @@ worker.onmessage = function (e) {
         if (!isAuto && steps > 0) {
             // MANUAL MODE: Animate
             const startPos = previousPosition;
+            console.log(`[Anim] Start: ${startPos}, Target: ${payload.position}, Steps: ${steps}`);
+
             animateMove(startPos, steps, payload.position, () => {
                 state.position = payload.position;
                 updateStatsUI(); // Update stats after move
