@@ -220,6 +220,42 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Tournament Module -->
+            <div id="tournament-panel"
+                class="bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-neon-blue/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                <!-- Glow Effect -->
+                <div
+                    class="absolute -left-10 -bottom-10 w-32 h-32 bg-neon-blue/20 blur-[50px] rounded-full group-hover:bg-neon-blue/30 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center mb-3 relative z-10">
+                    <h2 class="text-xs font-bold text-neon-blue uppercase tracking-widest flex items-center gap-2">
+                        <span class="text-lg">🏆</span>
+                        <div>
+                            <div>排名錦標賽</div>
+                            <div class="text-[9px] text-gray-400">Ranking Tournament</div>
+                        </div>
+                    </h2>
+                    </h2>
+                    <button id="btn-reset-tournament"
+                        class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                        title="重置錦標賽">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Ranking List -->
+                <div id="tournament-list"
+                    class="flex flex-col gap-1 max-h-[200px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent relative z-10 snap-y snap-mandatory">
+                    <!-- Items will be injected here -->
+                    <div class="text-gray-500 text-xs text-center py-2">Loading...</div>
+                </div>
+            </div>
         </div>
 
         <!-- Right Sidebar: Stats & Logs -->

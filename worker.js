@@ -16,7 +16,8 @@ let state = {
     autoRollTimer: null,
     rollCount: 0,
     targetRollCount: 0,
-    mode: 'IDLE' // IDLE, AUTO_PLAY, FAST_SIM
+    mode: 'IDLE', // IDLE, AUTO_PLAY, FAST_SIM
+    logId: 0
 };
 
 // --- Message Handling ---
@@ -151,7 +152,8 @@ function addMoney(amount, reason, desc) {
 function recordLog(data) {
     // We only keep the last 50 logs in state to save memory/bandwidth
     // logic is similar to main thread
-    const logEntry = { ...data, timestamp: new Date().toISOString() };
+    state.logId++;
+    const logEntry = { ...data, timestamp: new Date().toISOString(), id: state.logId };
     state.logs.push(logEntry);
     if (state.logs.length > 50) state.logs.shift(); // Keep last 50 in memory
 }

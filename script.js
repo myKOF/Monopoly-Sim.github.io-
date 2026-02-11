@@ -48,13 +48,19 @@ let state = {
     extraObjects: new Set(),
     collection: { level: 1, points: 0, totalCollected: 0, config: [] },
     tileVisits: [],
+    tournament: {
+        participants: [], // {id, name, score, target, valueRange:[], cdRange:[], nextUpdate: 0}
+        playerScore: 0,
+        playerRank: 0
+    }
 };
 
 const systemConfig = {
     Target_Speed: 0.1, // Default 100ms
     Spin_CD: 0.25,    // Default 250ms
     UI_Px: [10, 10, 10, 16], // Top, Bottom, Left, Right
-    Collect_UI_Name: "收藏活動"
+    Collect_UI_Name: "收藏活動",
+    AIRPORT_Value: 50
 };
 
 // DOM Elements
@@ -78,7 +84,10 @@ const ui = {
     colBar: document.getElementById('collection-bar'),
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
-    btnFast: document.getElementById('btn-fast')
+    btnStop: document.getElementById('btn-stop'),
+    autoProgress: document.getElementById('auto-progress'),
+    btnFast: document.getElementById('btn-fast'),
+    tourList: document.getElementById('tournament-list')
 };
 
 // Fallback Config
@@ -167,6 +176,24 @@ worker.onmessage = function (e) {
                         worker.postMessage({ type: 'NEXT_TURN' });
                     }, systemConfig.Spin_CD * 1000);
                 }
+
+                // Check for Airport (Tournament Scoring)
+                const tile = state.properties[payload.position];
+                if (tile && tile.type === 'AIRPORT') {
+                    // Add score
+                    const bonus = systemConfig.AIRPORT_Value || 50;
+                    state.tournament.playerScore += bonus;
+                    renderTournamentUI();
+
+                    // Visual Feedback (Log) - Use same format as worker logs but local
+                    const logDiv = document.createElement('div');
+                    logDiv.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
+                    logDiv.innerHTML = `
+                        <span class="text-gray-600 w-6">#${state.turn}</span>
+                        <span class="flex-1 text-yellow-400 truncate">抵達機場! 積分 +${bonus}</span>
+                     `;
+                    ui.logContainer.prepend(logDiv);
+                }
             });
         } else {
             // Fallback / Init / Extra Gen
@@ -215,15 +242,19 @@ function animateMove(startPos, steps, finalPos, onComplete) {
     step();
 }
 
-function updateLogs(newLogs) {
-    // Basic log diffing or just clear/redraw
-    // Since logs are minimal, clearing is fine for now
-    ui.logContainer.innerHTML = '';
-    // Wait, clearing removes history beyond 50.
-    // Actually the worker maintains the last 50.
-    // So we just render what the worker gives us.
+let lastLogId = 0;
 
-    newLogs.forEach(data => {
+function updateLogs(newLogs) {
+    // Filter for new logs only
+    const logsToRender = newLogs.filter(l => l.id > lastLogId);
+    if (logsToRender.length === 0) return;
+
+    // Sort by ID ascending (Oldest -> Newest) so we append to bottom
+    logsToRender.sort((a, b) => a.id - b.id);
+
+    logsToRender.forEach(data => {
+        lastLogId = Math.max(lastLogId, data.id);
+
         const div = document.createElement('div');
         div.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
 
@@ -237,7 +268,7 @@ function updateLogs(newLogs) {
             <span class="flex-1 text-gray-300 truncate">${data.detail}</span>
             <span class="${color} font-bold text-xs">${data.delta_gold !== 0 ? (data.delta_gold > 0 ? '+' : '') + data.delta_gold : ''}</span>
         `;
-        ui.logContainer.prepend(div);
+        ui.logContainer.appendChild(div); // Newest at bottom
     });
 }
 
@@ -315,6 +346,8 @@ async function initGame() {
                         // Check if it's the UI Name (String)
                         if (type === 'Collect_UI_Name') {
                             systemConfig.Collect_UI_Name = valStr.trim();
+                        } else if (type === 'AIRPORT_Value') {
+                            systemConfig.AIRPORT_Value = parseFloat(valStr);
                         } else {
                             const val = parseFloat(valStr);
                             if (type === 'Target_Speed') systemConfig.Target_Speed = val;
@@ -345,6 +378,20 @@ async function initGame() {
 
     console.log("Worker Initialized");
     renderBoard(); // Initial Render
+
+    // 4. Load Tournament Data
+    try {
+        const response = await fetch('./ranking_tournament.csv');
+        if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            const decoder = new TextDecoder('big5');
+            const text = decoder.decode(buffer);
+
+            state.tournament.participants = parseTournamentCSV(text);
+            renderTournamentUI();
+            updateTournamentBots(); // Start Loop
+        }
+    } catch (e) { console.warn("Tournament Load Failed", e); }
 }
 
 
@@ -439,6 +486,57 @@ function parseCollectionCSV(text) {
             required: parseInt(required),
             gold: parseInt(gold),
             desc: desc
+        };
+    }).filter(x => x);
+}
+
+function parseTournamentCSV(text) {
+    const lines = text.trim().split('\n');
+    const headers = lines[0].trim().split(','); // Assuming standard csv
+
+    // id,name,fraction,value,value_CD
+    return lines.slice(1).map(line => {
+        // Handle potential array values "{a,b}" which contain commas
+        // Manual parse:
+        // 1,Name,10000,"{10,20}","{5,20}"
+        const parts = [];
+        let current = '';
+        let inQuote = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuote = !inQuote;
+            } else if (char === ',' && !inQuote) {
+                parts.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        parts.push(current.trim());
+
+        // Ensure we have enough parts
+        // If name contained comma, length might be different, but quotes should handle it.
+        // If line is empty or comment
+        if (!line.trim() || parts.length < 5) return null;
+
+        // parts[3] might be "{10,20}" or "\"{10,20}\""
+        const parseRange = (str) => {
+            if (!str) return [0, 0];
+            str = str.replace(/"/g, '').replace('{', '').replace('}', '');
+            const nums = str.split(',').map(n => parseFloat(n));
+            return nums.length === 2 ? nums : [0, 0];
+        };
+
+        return {
+            id: parts[0],
+            name: parts[1].replace(/"/g, ''),
+            target: parseFloat(parts[2]),
+            valueRange: parseRange(parts[3]),
+            cdRange: parseRange(parts[4]),
+            score: 0,
+            nextUpdate: Date.now() + (Math.random() * 2000) // Stagger start
         };
     }).filter(x => x);
 }
@@ -600,40 +698,155 @@ function updatePlayerPosition(index) {
     if (tile) tile.classList.add('tile-active');
 }
 
-// Start
-initGame();
+
+// Tournament Loop
+function updateTournamentBots() {
+    const now = Date.now();
+    let updated = false;
+
+    state.tournament.participants.forEach(bot => {
+        if (bot.score >= bot.target) return; // Finished
+        if (now >= bot.nextUpdate) {
+            // Add Score
+            const val = getRandomRange(bot.valueRange[0], bot.valueRange[1]);
+            bot.score += Math.round(val);
+            if (bot.score > bot.target) bot.score = bot.target;
+
+            // Set Next Update
+            const cd = getRandomRange(bot.cdRange[0], bot.cdRange[1]);
+            bot.nextUpdate = now + (cd * 1000);
+            updated = true;
+        }
+    });
+
+    if (updated) {
+        renderTournamentUI();
+    }
+
+    requestAnimationFrame(updateTournamentBots);
+}
+
+function getRandomRange(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+function renderTournamentUI() {
+    // Merge Player into list for display
+    const list = [...state.tournament.participants];
+    list.push({
+        id: 'PLAYER',
+        name: 'You',
+        score: state.tournament.playerScore,
+        isPlayer: true
+    });
+
+    // Sort
+    list.sort((a, b) => b.score - a.score);
+
+    // Render
+    if (ui.tourList) {
+        ui.tourList.innerHTML = list.map((p, i) => {
+            const isPlayer = p.isPlayer;
+            const rank = i + 1;
+            const border = isPlayer ? 'border-neon-pink bg-pink-500/10' : 'border-white/5 bg-white/5';
+            const text = isPlayer ? 'text-neon-pink font-bold' : 'text-gray-300';
+
+            // Snap item
+            return `
+            <div class="chk-rank flex items-center gap-2 p-2 rounded border ${border} text-xs snap-start shrink-0">
+                <div class="w-6 font-mono text-gray-500 text-center">#${rank}</div>
+                <div class="flex-1 ${text} truncate max-w-[120px]" title="${p.name}">${p.name}</div>
+                <div class="font-mono text-white">${p.score}</div>
+            </div>
+            `;
+        }).join('');
+    }
+}
+
 // Start
 initGame();
 console.log("Script Loaded Successfully");
 
 // --- Draggable Logic ---
 enableDraggable(document.getElementById('activity-panel'), document.getElementById('activity-drag-handle'));
+enableDraggable(document.getElementById('tournament-panel'), document.getElementById('tournament-panel'));
+
+// --- Tournament Reset ---
+const btnResetTour = document.getElementById('btn-reset-tournament');
+if (btnResetTour) {
+    // Prevent drag start
+    btnResetTour.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    btnResetTour.addEventListener('click', () => {
+        if (!state.tournament) return;
+
+        state.tournament.playerScore = 0;
+        state.tournament.participants.forEach(p => {
+            p.score = 0;
+            p.nextUpdate = Date.now() + (Math.random() * 2000);
+        });
+
+        renderTournamentUI();
+
+        // System Log
+        const logDiv = document.createElement('div');
+        logDiv.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
+        logDiv.innerHTML = `
+           <span class="text-gray-600 w-6">SYS</span>
+           <span class="flex-1 text-neon-blue truncate">錦標賽已重置 (Tournament Reset)</span>
+        `;
+        ui.logContainer.appendChild(logDiv);
+    });
+}
 
 function enableDraggable(el, handle) {
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
-    const SNAP_THRESHOLD = 20;
 
-    // Convert CSS right to left on first interaction to unify coordinate system
-    function normalizePosition() {
+    // Helper: Get robust local coordinates relative to offsetParent
+    function getLocalCoordinates() {
         const rect = el.getBoundingClientRect();
-        el.style.right = 'auto';
-        el.style.left = rect.left + 'px';
-        el.style.top = rect.top + 'px';
+        const parent = el.offsetParent || document.body;
+        const parentRect = parent.getBoundingClientRect();
+
+        // Calculate position relative to parent's client area (border-box)
+        const computedStyle = window.getComputedStyle(parent);
+        const borderLeft = parseFloat(computedStyle.borderLeftWidth) || 0;
+        const borderTop = parseFloat(computedStyle.borderTopWidth) || 0;
+
+        return {
+            left: rect.left - parentRect.left - borderLeft,
+            top: rect.top - parentRect.top - borderTop
+        };
+    }
+
+    function normalizePosition() {
+        const local = getLocalCoordinates();
+        el.style.right = 'auto'; // Release right constraint
+        el.style.left = local.left + 'px';
+        el.style.top = local.top + 'px';
     }
 
     handle.addEventListener('mousedown', (e) => {
-        if (!el.style.left || el.style.right !== 'auto') normalizePosition();
+        if (e.button !== 0) return;
+
+        // 1. Disable transition immediately to prevent jump
+        el.style.transition = 'none';
+
+        // 2. Normalize if needed (switch from Right to Left positioning)
+        if (!el.style.left || el.style.right !== 'auto') {
+            normalizePosition();
+        }
 
         isDragging = true;
         startX = e.clientX;
         startY = e.clientY;
-        const rect = el.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
 
-        el.classList.add('z-50'); // Bring to front
-        el.style.transition = 'none'; // Disable transition for direct follow
+        // 3. Capture starting style positions (should be set by normalize now)
+        initialLeft = parseFloat(el.style.left) || 0;
+        initialTop = parseFloat(el.style.top) || 0;
+
+        el.classList.add('z-50');
 
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
@@ -647,42 +860,13 @@ function enableDraggable(el, handle) {
         let newLefty = initialLeft + dx;
         let newTop = initialTop + dy;
 
-        // --- Snapping Logic ---
-
-        // 1. Snap to Right Sidebar (with GAP)
-        // Sidebar matches right edge. Sidebar width = 384px (w-96).
-        const sidebarLeft = window.innerWidth - 384;
-        const elWidth = el.offsetWidth;
-        const GAP_RIGHT = systemConfig.Snap_Margin[3]; // Right Margin
-
-        // Snap Right Edge to Sidebar Left Edge - GAP
-        const targetSnapLeft = sidebarLeft - elWidth - GAP_RIGHT;
-
-        if (Math.abs(newLefty - targetSnapLeft) < SNAP_THRESHOLD) {
-            newLefty = targetSnapLeft;
-        }
-
-        // 2. Snap to Top Header
-        // Header height = 56px (h-14). Panel default top = 88px.
-        const headerBottom = 56;
-        const GAP_TOP = systemConfig.Snap_Margin[0]; // Top Margin
-
-        // Snap to Header Bottom + Top Margin
-        if (Math.abs(newTop - (headerBottom + GAP_TOP)) < SNAP_THRESHOLD) {
-            newTop = headerBottom + GAP_TOP;
-        }
-        // Snap to Default Top (88px)
-        if (Math.abs(newTop - 88) < SNAP_THRESHOLD) {
-            newTop = 88;
-        }
-
         el.style.left = `${newLefty}px`;
         el.style.top = `${newTop}px`;
     }
 
     function onMouseUp() {
         isDragging = false;
-        el.style.transition = ''; // Re-enable if needed
+        el.style.transition = ''; // Re-enable transition
         el.classList.remove('z-50');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
