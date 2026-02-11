@@ -184,35 +184,56 @@
             </div>
         </section>
 
-        <!-- Right Sidebar: Stats & Logs -->
-        <section class="w-96 border-l border-white/10 bg-vibe-dark/80 backdrop-blur-md flex flex-col shrink-0 z-20">
-
-            <!-- Top: Statistics -->
-            <div class="h-1/2 flex flex-col border-b border-white/10">
-                <!-- Collection Event Header -->
+        <!-- Activity Panel (Floating Left of Sidebar) -->
+        <div id="activity-panel"
+            class="absolute top-[88px] right-[25rem] w-80 flex flex-col gap-4 pointer-events-auto z-30 transition-shadow duration-300">
+            <!-- Collection Event Module -->
+            <div id="activity-drag-handle"
+                class="bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                <!-- Glow Effect -->
                 <div
-                    class="p-3 border-b border-white/10 bg-gradient-to-r from-pink-500/10 to-transparent flex flex-col gap-2">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2">
-                            <span>🍦</span> 收藏活動 Lv.<span id="collection-level" class="text-white">1</span>
-                        </h2>
-                        <div class="text-[10px] text-pink-300 font-mono"><span id="collection-points">0</span> / <span
-                                id="collection-target">3</span></div>
-                    </div>
-                    <!-- Progress Bar -->
-                    <div class="w-full h-1.5 bg-gray-700/50 rounded-full overflow-hidden">
-                        <div id="collection-bar"
-                            class="h-full bg-gradient-to-r from-pink-500 to-purple-500 w-0 transition-all duration-300">
+                    class="absolute -right-10 -top-10 w-32 h-32 bg-pink-500/20 blur-[50px] rounded-full group-hover:bg-pink-500/30 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center mb-3 relative z-10">
+                    <h2 class="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2">
+                        <span class="text-lg">🍦</span>
+                        <div>
+                            <div>收藏活動</div>
+                            <div class="text-[9px] text-gray-400">Limited Event</div>
+                        </div>
+                    </h2>
+                    <div class="flex flex-col items-end">
+                        <div class="text-2xl font-black text-white leading-none">Lv.<span id="collection-level">1</span>
+                        </div>
+                        <div class="text-[9px] text-pink-300 font-mono mt-1"><span id="collection-points">0</span> /
+                            <span id="collection-target">3</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="p-3 border-b border-white/10 bg-white/5 flex justify-between items-center py-2">
+                <!-- Progress Bar -->
+                <div class="w-full h-2 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative z-10">
+                    <div id="collection-bar"
+                        class="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 w-0 transition-all duration-500 relative">
+                        <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar: Stats & Logs -->
+        <section
+            class="w-96 border-l border-white/10 bg-vibe-dark/80 backdrop-blur-md flex flex-col shrink-0 z-20 shadow-2xl">
+
+            <!-- Top: Statistics -->
+            <div class="h-1/2 flex flex-col border-b border-white/10">
+                <div class="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
                     <h2 class="text-xs font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                        <span class="text-neon-green">📊</span> 數據統計
+                        <span class="text-base text-neon-green">📊</span> 數據統計
                     </h2>
-                    <div class="text-[10px] text-gray-500">Total: <span id="stats-total-moves"
-                            class="text-neon-pink font-bold">0</span></div>
+                    <div class="text-[10px] text-gray-500 bg-black/20 px-2 py-1 rounded">Total: <span
+                            id="stats-total-moves" class="text-neon-pink font-bold">0</span></div>
                 </div>
 
                 <!-- Table Header -->

@@ -52,7 +52,8 @@ let state = {
 
 const systemConfig = {
     Target_Speed: 0.1, // Default 100ms
-    spin_CD: 0.25     // Default 250ms
+    spin_CD: 0.25,    // Default 250ms
+    Snap_Margin: [10, 10, 10, 16] // Top, Bottom, Left, Right
 };
 
 // DOM Elements
@@ -133,7 +134,8 @@ worker.onmessage = function (e) {
         const isFastMode = ui.btnFast.disabled === true && ui.btnAuto.classList.contains('hidden') === false;
         // Wait, button states are tricky. Let's rely on checking if we are "stopping" or "running".
 
-        const isAutoRunning = !ui.btnAuto.classList.contains('hidden') === false; // Auto button hidden = running
+        // const isAutoRunning = !ui.btnAuto.classList.contains('hidden') === false; // [FIX] Removed local var
+        // Now using global isAutoRunning
 
         if (isFastMode) {
             // Instant Update (Fast Sim)
@@ -184,6 +186,7 @@ worker.onmessage = function (e) {
 };
 
 let isAnimating = false;
+let isAutoRunning = false; // [FIX] Global state for Auto Play
 function setIsAnimating(val) {
     isAnimating = val;
     ui.btnRoll.disabled = val;
@@ -273,18 +276,36 @@ async function initGame() {
 
     // 2. Load System Config (Async)
     try {
-        const response = await fetch('./system_config.csv');
+        const response = await fetch('./system_config.csv?' + new Date().getTime());
         if (response.ok) {
             const text = await response.text();
             // Parse manual csv
             const lines = text.trim().split('\n').slice(1);
             lines.forEach(line => {
-                const cols = line.split(',');
-                if (cols.length >= 3) {
-                    const type = cols[1].trim();
-                    const val = parseFloat(cols[2].trim());
-                    if (type === 'Target_Speed') systemConfig.Target_Speed = val;
-                    if (type === 'spin_CD') systemConfig.spin_CD = val;
+                // Simple split by comma might break if value contains comma (like the array)
+                // But our format is {a,b,c,d} inside one column? CSV standard says quotes.
+                // Let's assume user writes "{10,10,5,5}" without quotes, so split(',') will split it.
+                // We need a smarter regex or just handle the array case.
+
+                // Regex to capture: ID, Type, Value (handling {}), Desc
+                const match = line.match(/^(\d+),([^,]+),("?\{[^}]+\}"?|[^,]+),(.+)$/);
+                if (match) {
+                    const type = match[2].trim();
+                    let valStr = match[3].trim();
+
+                    if (valStr.startsWith('{') || valStr.startsWith('"{')) {
+                        // Array parsing
+                        valStr = valStr.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
+                        const nums = valStr.split(',').map(n => parseFloat(n.trim()));
+                        if (nums.length === 4) {
+                            if (type === 'Snap_Margin') systemConfig.Snap_Margin = nums;
+                        }
+                    } else {
+                        // Number parsing
+                        const val = parseFloat(valStr);
+                        if (type === 'Target_Speed') systemConfig.Target_Speed = val;
+                        if (type === 'spin_CD') systemConfig.spin_CD = val;
+                    }
                 }
             });
             console.log("System Config Loaded:", systemConfig);
@@ -318,17 +339,25 @@ ui.btnAuto.addEventListener('click', () => {
     const count = parseInt(ui.autoCount.value);
     ui.btnAuto.classList.add('hidden');
     ui.btnStop.classList.remove('hidden');
+    isAutoRunning = true; // [FIX] Set valid state
     // "Watch Mode" -> START_AUTO_PLAY
     worker.postMessage({ type: 'START_AUTO_PLAY', payload: { count } });
 });
 
 ui.btnStop.addEventListener('click', () => {
     // Just send stop, Worker handles IDLE state
+    isAutoRunning = false; // [FIX] Stop ping-pong
     worker.postMessage({ type: 'STOP_AUTO' });
 });
 
 ui.btnGenExtra.addEventListener('click', () => {
-    if (isAnimating) return;
+    // [FIX] Stop Auto Immediately if running
+    if (isAutoRunning) {
+        worker.postMessage({ type: 'STOP_AUTO' });
+        isAutoRunning = false; // Stop client-side ping-pong
+    }
+
+    // Always generate (even if animating, we queue the state change)
     const count = parseInt(ui.extraCount.value);
     worker.postMessage({ type: 'GEN_EXTRA', payload: { count } });
 });
@@ -340,14 +369,12 @@ ui.btnFast.addEventListener('click', () => {
     ui.btnFast.disabled = true;
     ui.btnAuto.disabled = true;
     ui.btnRoll.disabled = true;
-    // We reuse auto UI elements for valid feedback
-    // ui.btnAuto.classList.add('hidden'); 
-    // ui.btnStop.classList.remove('hidden');
 
     worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
 });
 
 function endAutoRoll(finished) {
+    isAutoRunning = false; // [FIX] Ensure state is reset
     ui.btnAuto.classList.remove('hidden');
     ui.btnStop.classList.add('hidden');
     if (finished) alert("Auto Roll Finished");
@@ -555,4 +582,89 @@ function updatePlayerPosition(index) {
 
 // Start
 initGame();
+// Start
+initGame();
 console.log("Script Loaded Successfully");
+
+// --- Draggable Logic ---
+enableDraggable(document.getElementById('activity-panel'), document.getElementById('activity-drag-handle'));
+
+function enableDraggable(el, handle) {
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    const SNAP_THRESHOLD = 20;
+
+    // Convert CSS right to left on first interaction to unify coordinate system
+    function normalizePosition() {
+        const rect = el.getBoundingClientRect();
+        el.style.right = 'auto';
+        el.style.left = rect.left + 'px';
+        el.style.top = rect.top + 'px';
+    }
+
+    handle.addEventListener('mousedown', (e) => {
+        if (!el.style.left || el.style.right !== 'auto') normalizePosition();
+
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = el.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+
+        el.classList.add('z-50'); // Bring to front
+        el.style.transition = 'none'; // Disable transition for direct follow
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseMove(e) {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        let newLefty = initialLeft + dx;
+        let newTop = initialTop + dy;
+
+        // --- Snapping Logic ---
+
+        // 1. Snap to Right Sidebar (with GAP)
+        // Sidebar matches right edge. Sidebar width = 384px (w-96).
+        const sidebarLeft = window.innerWidth - 384;
+        const elWidth = el.offsetWidth;
+        const GAP_RIGHT = systemConfig.Snap_Margin[3]; // Right Margin
+
+        // Snap Right Edge to Sidebar Left Edge - GAP
+        const targetSnapLeft = sidebarLeft - elWidth - GAP_RIGHT;
+
+        if (Math.abs(newLefty - targetSnapLeft) < SNAP_THRESHOLD) {
+            newLefty = targetSnapLeft;
+        }
+
+        // 2. Snap to Top Header
+        // Header height = 56px (h-14). Panel default top = 88px.
+        const headerBottom = 56;
+        const GAP_TOP = systemConfig.Snap_Margin[0]; // Top Margin
+
+        // Snap to Header Bottom + Top Margin
+        if (Math.abs(newTop - (headerBottom + GAP_TOP)) < SNAP_THRESHOLD) {
+            newTop = headerBottom + GAP_TOP;
+        }
+        // Snap to Default Top (88px)
+        if (Math.abs(newTop - 88) < SNAP_THRESHOLD) {
+            newTop = 88;
+        }
+
+        el.style.left = `${newLefty}px`;
+        el.style.top = `${newTop}px`;
+    }
+
+    function onMouseUp() {
+        isDragging = false;
+        el.style.transition = ''; // Re-enable if needed
+        el.classList.remove('z-50');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+}
