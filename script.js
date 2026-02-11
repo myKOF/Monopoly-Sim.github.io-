@@ -50,6 +50,11 @@ let state = {
     tileVisits: [],
 };
 
+const systemConfig = {
+    Target_Speed: 0.1, // Default 100ms
+    spin_CD: 0.25     // Default 250ms
+};
+
 // DOM Elements
 const ui = {
     board: document.getElementById('board-grid'),
@@ -96,21 +101,21 @@ const DEFAULT_COLLECTION_CSV = `level,required_points,reward_gold,reward_desc
 1,3,1000,初級`;
 
 // Worker Message Listener
+// Worker Message Listener
 worker.onmessage = function (e) {
     const { type, payload } = e.data;
 
     if (type === 'UPDATE_UI') {
         const previousPosition = state.position;
         const steps = payload.diceRoll;
-        const isAuto = payload.isAuto;
+        const isAuto = payload.isAuto; // This now means "Is this a turn execution?"
 
-        // Sync State (but keep visual position derived for now if animating)
+        // Sync Data
         state.turn = payload.turn;
         state.money = payload.money;
         state.tileVisits = payload.tileVisits;
         state.extraObjects = new Set(payload.extraObjects);
         state.collection = payload.collection;
-        // NOTE: We update state.position AFTER animation if manual
 
         updateLogs(payload.logs);
 
@@ -118,19 +123,50 @@ worker.onmessage = function (e) {
             ui.diceVisual.textContent = steps;
         }
 
-        if (!isAuto && steps > 0) {
-            // MANUAL MODE: Animate
+        // --- VISUAL LOGIC ---
+        // 1. FAST SIM (Batch) or Special Events -> No Steps or payload indicates batch?
+        // Actually, our worker sends isAuto=true for both AutoPlay and FastSim.
+        // We need to differentiate or just infer.
+        // If the UI is in "Auto Play" mode (btnAuto hidden), we should animate.
+        // If the UI is in "Fast Sim" mode (btnFast disabled), we might want to skip animation.
+
+        const isFastMode = ui.btnFast.disabled === true && ui.btnAuto.classList.contains('hidden') === false;
+        // Wait, button states are tricky. Let's rely on checking if we are "stopping" or "running".
+
+        const isAutoRunning = !ui.btnAuto.classList.contains('hidden') === false; // Auto button hidden = running
+
+        if (isFastMode) {
+            // Instant Update (Fast Sim)
+            state.position = payload.position;
+            requestAnimationFrame(() => {
+                renderBoard();
+                updateUI();
+                updateStatsUI();
+                updatePlayerPosition(state.position);
+            });
+        } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
+            // "Watch Mode" (Auto Play) OR Manual Roll -> Animate
             const startPos = previousPosition;
-            console.log(`[Anim] Start: ${startPos}, Target: ${payload.position}, Steps: ${steps}`);
+            setIsAnimating(true);
 
             animateMove(startPos, steps, payload.position, () => {
                 state.position = payload.position;
-                updateStatsUI(); // Update stats after move
+                setIsAnimating(false);
+
+                updateStatsUI();
                 updateUI();
-                renderBoard(); // refresh board active states
+                renderBoard();
+                updatePlayerPosition(state.position); // [FIX] Re-apply active class AFTER render
+
+                // [PING-PONG] If Auto Play, trigger next turn
+                if (isAutoRunning) {
+                    setTimeout(() => {
+                        worker.postMessage({ type: 'NEXT_TURN' });
+                    }, systemConfig.spin_CD * 1000);
+                }
             });
         } else {
-            // AUTO MODE: Instant Jump
+            // Fallback / Init / Extra Gen
             state.position = payload.position;
             requestAnimationFrame(() => {
                 renderBoard();
@@ -142,12 +178,21 @@ worker.onmessage = function (e) {
     }
 
     if (type === 'AUTO_STOPPED') {
+        setIsAnimating(false);
         endAutoRoll(payload.finished);
     }
 };
 
+let isAnimating = false;
+function setIsAnimating(val) {
+    isAnimating = val;
+    ui.btnRoll.disabled = val;
+    // ui.btnGenExtra.disabled = val; 
+}
+
 function animateMove(startPos, steps, finalPos, onComplete) {
     let currentStep = 0;
+    const interval = systemConfig.Target_Speed * 1000;
 
     function step() {
         if (currentStep >= steps) {
@@ -155,11 +200,12 @@ function animateMove(startPos, steps, finalPos, onComplete) {
             return;
         }
 
+        // Calculate next position visually
         const nextPos = (startPos + currentStep + 1) % BOARD_SIZE;
         updatePlayerPosition(nextPos);
         currentStep++;
 
-        setTimeout(() => requestAnimationFrame(step), 100); // 100ms per tile
+        setTimeout(() => requestAnimationFrame(step), interval);
     }
 
     step();
@@ -225,7 +271,29 @@ async function initGame() {
         }
     } catch (e) { }
 
-    // 2. Initialize Worker
+    // 2. Load System Config (Async)
+    try {
+        const response = await fetch('./system_config.csv');
+        if (response.ok) {
+            const text = await response.text();
+            // Parse manual csv
+            const lines = text.trim().split('\n').slice(1);
+            lines.forEach(line => {
+                const cols = line.split(',');
+                if (cols.length >= 3) {
+                    const type = cols[1].trim();
+                    const val = parseFloat(cols[2].trim());
+                    if (type === 'Target_Speed') systemConfig.Target_Speed = val;
+                    if (type === 'spin_CD') systemConfig.spin_CD = val;
+                }
+            });
+            console.log("System Config Loaded:", systemConfig);
+        }
+    } catch (e) {
+        console.warn("System Config Load Failed, using defaults", e);
+    }
+
+    // 3. Initialize Worker
     worker.postMessage({
         type: 'INIT_GAME',
         payload: {
@@ -242,6 +310,7 @@ async function initGame() {
 // --- Event Listeners (Delegate to Worker) ---
 
 ui.btnRoll.addEventListener('click', () => {
+    if (isAnimating) return; // [FIX] Prevent re-entry
     worker.postMessage({ type: 'EXEC_TURN' });
 });
 
@@ -249,21 +318,33 @@ ui.btnAuto.addEventListener('click', () => {
     const count = parseInt(ui.autoCount.value);
     ui.btnAuto.classList.add('hidden');
     ui.btnStop.classList.remove('hidden');
-    worker.postMessage({ type: 'START_AUTO', payload: { count } });
+    // "Watch Mode" -> START_AUTO_PLAY
+    worker.postMessage({ type: 'START_AUTO_PLAY', payload: { count } });
 });
 
 ui.btnStop.addEventListener('click', () => {
+    // Just send stop, Worker handles IDLE state
     worker.postMessage({ type: 'STOP_AUTO' });
 });
 
 ui.btnGenExtra.addEventListener('click', () => {
+    if (isAnimating) return;
     const count = parseInt(ui.extraCount.value);
     worker.postMessage({ type: 'GEN_EXTRA', payload: { count } });
 });
 
 ui.btnFast.addEventListener('click', () => {
     const count = parseInt(ui.autoCount.value);
-    worker.postMessage({ type: 'START_AUTO', payload: { count } }); // Logic handles speed
+    // "Lightning Mode" -> START_FAST_SIM
+    // UI handling for Fast Sim
+    ui.btnFast.disabled = true;
+    ui.btnAuto.disabled = true;
+    ui.btnRoll.disabled = true;
+    // We reuse auto UI elements for valid feedback
+    // ui.btnAuto.classList.add('hidden'); 
+    // ui.btnStop.classList.remove('hidden');
+
+    worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
 });
 
 function endAutoRoll(finished) {

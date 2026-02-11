@@ -15,7 +15,8 @@ let state = {
     isRunning: false,
     autoRollTimer: null,
     rollCount: 0,
-    targetRollCount: 0
+    targetRollCount: 0,
+    mode: 'IDLE' // IDLE, AUTO_PLAY, FAST_SIM
 };
 
 // --- Message Handling ---
@@ -39,10 +40,28 @@ self.onmessage = function (e) {
             sendUpdate();
             break;
 
-        case 'START_AUTO':
+        case 'START_AUTO_PLAY': // Visual Mode
             state.targetRollCount = payload.count || Infinity;
             state.rollCount = 0;
-            startAutoRoll();
+            state.mode = 'AUTO_PLAY'; // New State
+            execTurn(true); // Run first turn, then wait for NEXT_TURN
+            break;
+
+        case 'START_FAST_SIM': // Background/Fast Mode
+            state.targetRollCount = payload.count || Infinity;
+            state.rollCount = 0;
+            state.mode = 'FAST_SIM';
+            startFastLoop();
+            break;
+
+        case 'NEXT_TURN': // Triggered by UI after animation
+            if (state.mode === 'AUTO_PLAY') {
+                if (state.rollCount < state.targetRollCount) {
+                    execTurn(true);
+                } else {
+                    stopAutoRoll(true);
+                }
+            }
             break;
 
         case 'STOP_AUTO':
@@ -61,13 +80,12 @@ self.onmessage = function (e) {
 
 // --- Core Logic ---
 
-function startAutoRoll() {
-    if (state.isRunning) return;
-    state.isRunning = true;
+function startFastLoop() {
+    if (state.mode !== 'FAST_SIM') return;
 
     // Web Worker can use setInterval/setTimeout without throttling in background tabs
     function loop() {
-        if (!state.isRunning) return;
+        if (state.mode !== 'FAST_SIM') return;
 
         if (state.rollCount >= state.targetRollCount) {
             stopAutoRoll(true);
@@ -76,16 +94,14 @@ function startAutoRoll() {
 
         execTurn(true);
         state.rollCount++;
-
-        // Post update every tick for smooth UI, or batch if too fast
-        // For now, simple 100ms tick
-        state.autoRollTimer = setTimeout(loop, 100);
+        // Fast loop doesn't wait for UI
+        state.autoRollTimer = setTimeout(loop, 10); // Very fast
     }
     loop();
 }
 
 function stopAutoRoll(finished) {
-    state.isRunning = false;
+    state.mode = 'IDLE';
     clearTimeout(state.autoRollTimer);
     self.postMessage({ type: 'AUTO_STOPPED', payload: { finished } });
 }
@@ -97,6 +113,7 @@ function rollDice() {
 }
 
 function execTurn(isAuto) {
+    state.rollCount++;
     const steps = rollDice();
     state.turn++;
 

@@ -1,0 +1,3 @@
+id,type,value,desc
+1,Target_Speed,0.075,棋子移動速度間隔時間
+2,spin_CD,0.35,每次擲骰的間隔時間
