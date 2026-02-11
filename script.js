@@ -52,8 +52,9 @@ let state = {
 
 const systemConfig = {
     Target_Speed: 0.1, // Default 100ms
-    spin_CD: 0.25,    // Default 250ms
-    Snap_Margin: [10, 10, 10, 16] // Top, Bottom, Left, Right
+    Spin_CD: 0.25,    // Default 250ms
+    UI_Px: [10, 10, 10, 16], // Top, Bottom, Left, Right
+    Collect_UI_Name: "收藏活動"
 };
 
 // DOM Elements
@@ -164,7 +165,7 @@ worker.onmessage = function (e) {
                 if (isAutoRunning) {
                     setTimeout(() => {
                         worker.postMessage({ type: 'NEXT_TURN' });
-                    }, systemConfig.spin_CD * 1000);
+                    }, systemConfig.Spin_CD * 1000);
                 }
             });
         } else {
@@ -278,7 +279,11 @@ async function initGame() {
     try {
         const response = await fetch('./system_config.csv?' + new Date().getTime());
         if (response.ok) {
-            const text = await response.text();
+            // [FIX] Use ArrayBuffer + TextDecoder to handle Big5 encoding (common in Excel/Windows)
+            const buffer = await response.arrayBuffer();
+            const decoder = new TextDecoder('big5');
+            const text = decoder.decode(buffer);
+
             // Parse manual csv
             const lines = text.trim().split('\n').slice(1);
             lines.forEach(line => {
@@ -287,8 +292,13 @@ async function initGame() {
                 // Let's assume user writes "{10,10,5,5}" without quotes, so split(',') will split it.
                 // We need a smarter regex or just handle the array case.
 
+                // [FIX] Trim line to remove potential \r from Windows CRLF
+                line = line.trim();
+                if (!line) return;
+
                 // Regex to capture: ID, Type, Value (handling {}), Desc
                 const match = line.match(/^(\d+),([^,]+),("?\{[^}]+\}"?|[^,]+),(.+)$/);
+
                 if (match) {
                     const type = match[2].trim();
                     let valStr = match[3].trim();
@@ -298,16 +308,26 @@ async function initGame() {
                         valStr = valStr.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
                         const nums = valStr.split(',').map(n => parseFloat(n.trim()));
                         if (nums.length === 4) {
-                            if (type === 'Snap_Margin') systemConfig.Snap_Margin = nums;
+                            if (type === 'UI_Px') systemConfig.UI_Px = nums;
                         }
                     } else {
-                        // Number parsing
-                        const val = parseFloat(valStr);
-                        if (type === 'Target_Speed') systemConfig.Target_Speed = val;
-                        if (type === 'spin_CD') systemConfig.spin_CD = val;
+                        // Number parsing or String parsing
+                        // Check if it's the UI Name (String)
+                        if (type === 'Collect_UI_Name') {
+                            systemConfig.Collect_UI_Name = valStr.trim();
+                        } else {
+                            const val = parseFloat(valStr);
+                            if (type === 'Target_Speed') systemConfig.Target_Speed = val;
+                            if (type === 'Spin_CD') systemConfig.Spin_CD = val;
+                        }
                     }
                 }
             });
+
+            // Apply Config to UI
+            const colTitle = document.getElementById('collection-title');
+            if (colTitle) colTitle.textContent = systemConfig.Collect_UI_Name;
+
             console.log("System Config Loaded:", systemConfig);
         }
     } catch (e) {

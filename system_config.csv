@@ -1,4 +1,5 @@
-id,type,value,desc
-1,Target_Speed,0.075,棋子移動速度間隔時間
-2,spin_CD,0.35,每次擲骰的間隔時間
-3,UI_px,"{10,10,5,5}",磁吸效果間距(上下左右)
+level,required_points,reward_gold,reward_desc
+1,Target_Speed,0.05,棋子移動速度間隔時間
+2,Spin_CD,0.35,每次自動擲骰CD
+3,UI_Px,"{10,10,5,5}",UI磁吸效果間距(上下左右)
+4,Collect_UI_Name,圖標搜集,圖標搜集UI的名稱
