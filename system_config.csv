@@ -3,3 +3,4 @@ level,required_points,reward_gold,reward_desc
 2,Spin_CD,0.35,每次自動擲骰CD
 3,UI_Px,"{10,10,5,5}",UI磁吸效果間距(上下左右)
 4,Collect_UI_Name,圖標搜集,圖標搜集UI的名稱
+5,AIRPORT_Value,50,機場錦標賽分數
