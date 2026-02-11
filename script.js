@@ -447,6 +447,12 @@ function endAutoRoll(finished) {
     isAutoRunning = false; // [FIX] Ensure state is reset
     ui.btnAuto.classList.remove('hidden');
     ui.btnStop.classList.add('hidden');
+
+    // [FIX] Re-enable buttons (in case coming from Fast Sim)
+    ui.btnFast.disabled = false;
+    ui.btnAuto.disabled = false;
+    ui.btnRoll.disabled = false;
+
     if (finished) alert("Auto Roll Finished");
 }
 

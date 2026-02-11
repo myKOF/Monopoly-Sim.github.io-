@@ -105,14 +105,15 @@ function startFastLoop() {
         if (state.mode !== 'FAST_SIM') return;
 
         if (state.rollCount >= state.targetRollCount) {
+            sendUpdate(0, true); // [NEW] Send final state update
             stopAutoRoll(true);
             return;
         }
 
-        execTurn(true);
+        execTurn(true, true); // [NEW] Silent mode
         state.rollCount++;
         // Fast loop doesn't wait for UI
-        state.autoRollTimer = setTimeout(loop, 10); // Very fast
+        state.autoRollTimer = setTimeout(loop, 0); // Minimal delay
     }
     loop();
 }
@@ -129,7 +130,7 @@ function rollDice() {
     return d1 + d2;
 }
 
-function execTurn(isAuto) {
+function execTurn(isAuto, silent = false) {
     // Check Dice Shortage
     if ((state.dice || 0) < (state.multiplier || 1)) {
         recordLog({
@@ -169,7 +170,7 @@ function execTurn(isAuto) {
     handleTileEvent(state.position);
 
     // Send Update to Main Thread
-    sendUpdate(steps, isAuto);
+    if (!silent) sendUpdate(steps, isAuto);
 }
 
 function addMoney(amount, reason, desc) {
