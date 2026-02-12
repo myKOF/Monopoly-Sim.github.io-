@@ -187,8 +187,36 @@ worker.onmessage = function (e) {
                 if (tile && tile.type === 'AIRPORT') {
                     // Add score
                     const baseBonus = systemConfig.AIRPORT_Value || 50;
-                    const bonus = baseBonus * (state.multiplier || 1); // [FIX] Multiply by multiplier
+                    const bonus = baseBonus * (state.multiplier || 1);
                     state.tournament.playerScore += bonus;
+
+                    // [NEW] Integral Logic
+                    if (state.tournament.integral && state.tournament.integralConfig) {
+                        state.tournament.integral.score += bonus;
+
+                        // Check Level Up
+                        let currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+                        while (currentCfg && state.tournament.integral.score >= currentCfg.required) {
+                            // Level Up!
+                            state.tournament.integral.score -= currentCfg.required;
+                            state.tournament.integral.level++;
+
+                            // Give Reward
+                            const reward = currentCfg.reward;
+                            worker.postMessage({
+                                type: 'ADD_MONEY',
+                                payload: {
+                                    amount: reward,
+                                    reason: "TOURNAMENT_INTEGRAL",
+                                    desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`
+                                }
+                            });
+
+                            // Check next level
+                            currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+                        }
+                    }
+
                     renderTournamentUI();
 
                     // Visual Feedback (Log) - Use same format as worker logs but local
@@ -216,6 +244,39 @@ worker.onmessage = function (e) {
     if (type === 'AUTO_STOPPED') {
         setIsAnimating(false);
         endAutoRoll(payload.finished);
+        // [NEW] Hide Progress
+        const overlay = document.getElementById('fast-sim-overlay');
+        if (overlay) overlay.classList.add('hidden');
+    }
+
+    // [NEW] Progress Handler
+    if (type === 'PROGRESS') {
+        const overlay = document.getElementById('fast-sim-overlay');
+        const percent = document.getElementById('fast-sim-percent');
+        if (overlay && percent) {
+            overlay.classList.remove('hidden');
+            percent.textContent = payload.percent;
+        }
+    }
+
+    if (type === 'EXPORT_DATA') {
+        const logs = payload.logs;
+        if (!logs || logs.length === 0) {
+            alert("沒有紀錄可匯出");
+            return;
+        }
+
+        const csvContent = "data:text/csv;charset=utf-8,"
+            + "Turn,Event,Detail,Delta Gold,Balance\n"
+            + logs.map(e => `${e.turn},${e.event},"${e.detail}",${e.delta_gold},${e.current_balance}`).join("\n");
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "monopoly_logs.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 };
 
@@ -348,7 +409,6 @@ async function initGame() {
                             if (type === 'UI_Px') systemConfig.UI_Px = nums;
                         }
                     } else {
-                        // Number parsing or String parsing
                         // Check if it's the UI Name (String)
                         if (type === 'Collect_UI_Name') {
                             systemConfig.Collect_UI_Name = value.trim();
@@ -388,6 +448,9 @@ async function initGame() {
     console.log("Worker Initialized");
     renderBoard(); // Initial Render
 
+    // [NEW] Auto Generate Icons
+    worker.postMessage({ type: 'GEN_EXTRA', payload: { count: 10 } });
+
     // 4. Load Tournament Data
     try {
         const response = await fetch('./ranking_tournament.csv');
@@ -397,6 +460,37 @@ async function initGame() {
             const text = decoder.decode(buffer);
 
             state.tournament.participants = parseTournamentCSV(text);
+
+            // [NEW] Load Integral Config
+            try {
+                const resIntegral = await fetch('./ranking_tournament_integral.csv');
+                if (resIntegral.ok) {
+                    const buf = await resIntegral.arrayBuffer();
+                    const txt = decoder.decode(buf);
+                    state.tournament.integralConfig = [];
+                    const lines = txt.split(/\r?\n/).slice(1);
+                    lines.forEach(l => {
+                        const p = l.split(',');
+                        if (p.length >= 4) {
+                            state.tournament.integralConfig.push({
+                                level: parseInt(p[0]),
+                                required: parseInt(p[1]),
+                                reward: parseInt(p[2]),
+                                desc: p[3]
+                            });
+                        }
+                    });
+
+                    // Init Integral State
+                    state.tournament.integral = {
+                        score: 0,
+                        level: 1
+                    };
+                }
+            } catch (e) {
+                console.error("Failed to load Integral CSV", e);
+            }
+
             renderTournamentUI();
             updateTournamentBots(); // Start Loop
         }
@@ -804,11 +898,75 @@ function renderTournamentUI() {
             `;
         }).join('');
     }
+
+    // [NEW] Render Integral UI
+    renderIntegralUI();
+}
+
+function renderIntegralUI() {
+    if (!state.tournament.integral || !state.tournament.integralConfig) return;
+
+    const uiLevel = document.getElementById('integral-level');
+    const uiBar = document.getElementById('integral-bar');
+    const uiScore = document.getElementById('integral-score');
+    const uiTarget = document.getElementById('integral-target');
+    const uiDesc = document.getElementById('integral-reward-desc');
+
+    if (!uiLevel || !uiBar) return;
+
+    const level = state.tournament.integral.level;
+    const score = state.tournament.integral.score;
+    const config = state.tournament.integralConfig.find(c => c.level === level);
+
+    uiLevel.textContent = level;
+
+    if (config) {
+        const required = config.required;
+        const pct = Math.min(100, (score / required) * 100);
+        uiBar.style.width = `${pct}%`;
+        uiScore.textContent = score;
+        uiTarget.textContent = required;
+        uiDesc.textContent = `Next: ${config.desc}`; // Simplified
+    } else {
+        // Max Level?
+        uiBar.style.width = '100%';
+        uiScore.textContent = score;
+        uiTarget.textContent = 'MAX';
+        uiDesc.textContent = 'Max Level Reached';
+    }
 }
 
 // --- Dice & Multiplier Logic ---
 const diceInput = document.getElementById('dice-balance');
 const multiplierSelect = document.getElementById('multiplier-select');
+// --- Export Logic ---
+const btnExport = document.getElementById('btn-export');
+const btnClearLogs = document.getElementById('btn-clear-logs');
+
+if (btnClearLogs) {
+    btnClearLogs.addEventListener('click', () => {
+        if (confirm('確定要清除所有紀錄嗎？')) {
+            ui.logContainer.innerHTML = '';
+            lastLogId = 0; // Reset local tracker
+            worker.postMessage({ type: 'CLEAR_LOGS' });
+        }
+    });
+}
+
+if (btnExport) {
+    btnExport.addEventListener('click', () => {
+        // Collect all logs: we need to ask worker or just allow UI export?
+        // Let's ask worker for full logs to export
+        worker.postMessage({ type: 'EXPORT_LOGS' });
+    });
+}
+// Export Listener is inside onmessage payload usually? 
+// Wait, we don't have export logic in worker yet. 
+// Existing btn-export was removed in previous steps, let's check where it went or if we need to re-add.
+// The user asked to Move export button, so we should keep it working.
+// Code at 903 only shows Dice logic. 
+
+
 
 if (diceInput && multiplierSelect) {
     // Init listeners

@@ -93,10 +93,29 @@ self.onmessage = function (e) {
             generateExtraObjects(payload.count);
             break;
 
+        case 'ADD_MONEY':
+            addMoney(payload.amount, payload.reason || "BONUS", payload.desc || "Bonus");
+            sendUpdate();
+            break;
+
         case 'RESET_STATS':
             state.tileVisits.fill(0);
             state.collection.totalCollected = 0;
             sendUpdate();
+            break;
+
+        case 'CLEAR_LOGS':
+            state.logs = [];
+            state.logId = 0;
+            // No update needed, UI already cleared
+            break;
+
+        case 'EXPORT_LOGS':
+            // Send all logs back to UI for download
+            self.postMessage({
+                type: 'EXPORT_DATA',
+                payload: { logs: state.logs }
+            });
             break;
     }
 };
@@ -110,14 +129,24 @@ function startFastLoop() {
     function loop() {
         if (state.mode !== 'FAST_SIM') return;
 
-        if (state.rollCount >= state.targetRollCount) {
-            sendUpdate(0, true); // [NEW] Send final state update
-            stopAutoRoll(true);
-            return;
+        // Batch Processing: Run 500 turns per tick
+        for (let i = 0; i < 500; i++) {
+            if (state.rollCount >= state.targetRollCount) {
+                sendUpdate(0, true);
+                stopAutoRoll(true);
+                return;
+            }
+            execTurn(true, true);
+            state.rollCount++;
         }
 
-        execTurn(true, true); // [NEW] Silent mode
-        state.rollCount++;
+        // Send Progress every 1% or at least every 100 turns
+        if (state.rollCount % 500 === 0) { // Sync with batch size
+            const pct = Math.floor((state.rollCount / state.targetRollCount) * 100);
+            self.postMessage({ type: 'PROGRESS', payload: { percent: pct } });
+        }
+
+
         // Fast loop doesn't wait for UI
         state.autoRollTimer = setTimeout(loop, 0); // Minimal delay
     }

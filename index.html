@@ -56,7 +56,16 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 flex overflow-hidden">
+    <main class="flex-1 flex overflow-hidden relative">
+        <!-- Fast Sim Progress Overlay -->
+        <div id="fast-sim-overlay"
+            class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-vibe-dark/90 border border-neon-green/30 px-6 py-3 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.2)] flex items-center gap-4 backdrop-blur-md">
+            <div class="flex flex-col items-center">
+                <div class="text-[10px] text-neon-green uppercase tracking-widest mb-1">Fast Simulation</div>
+                <div class="text-2xl font-bold text-white font-mono"><span id="fast-sim-percent">0</span>%</div>
+            </div>
+            <div class="w-8 h-8 rounded-full border-2 border-neon-green border-t-transparent animate-spin"></div>
+        </div>
 
         <!-- Board Area (Centered) -->
         <section class="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
@@ -108,6 +117,8 @@
                                 <option value="100" class="text-black">100 Runs</option>
                                 <option value="1000" class="text-black">1K Runs</option>
                                 <option value="10000" class="text-black">10K Runs</option>
+                                <option value="100000" class="text-black">100K Runs</option>
+                                <option value="1000000" class="text-black">1M Runs</option>
                             </select>
 
                             <!-- Auto Progress (Hidden by default) -->
@@ -253,6 +264,28 @@
                     </button>
                 </div>
 
+                <!-- Integral Reward Progress -->
+                <div class="mb-3 relative z-10">
+                    <div class="flex justify-between items-end mb-1">
+                        <div class="text-[10px] text-neon-blue font-bold tracking-wider">積分獎勵 (Integral)</div>
+                        <div class="text-[10px] text-gray-400 font-mono">Lv.<span id="integral-level"
+                                class="text-white font-bold">1</span></div>
+                    </div>
+                    <div
+                        class="w-full h-1.5 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative">
+                        <div id="integral-bar"
+                            class="h-full bg-gradient-to-r from-neon-blue to-cyan-400 w-0 transition-all duration-500 relative">
+                            <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center mt-1">
+                        <div class="text-[9px] text-gray-500 font-mono"><span id="integral-score">0</span> / <span
+                                id="integral-target">-</span></div>
+                        <div id="integral-reward-desc" class="text-[9px] text-yellow-500/80 truncate max-w-[120px]">
+                            Next: ???</div>
+                    </div>
+                </div>
+
                 <!-- Ranking List -->
                 <div id="tournament-list"
                     class="flex flex-col gap-1 max-h-[200px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent relative z-10 snap-y snap-mandatory">
@@ -308,6 +341,15 @@
                 <div class="p-3 border-b border-white/10 bg-white/5 flex justify-between items-center">
                     <h2 class="text-xs font-bold text-gray-300 uppercase tracking-widest">系統紀錄 (Logs)</h2>
                     <div class="flex items-center gap-2">
+                        <button id="btn-clear-logs"
+                            class="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors"
+                            title="清除紀錄">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                </path>
+                            </svg>
+                        </button>
                         <button id="btn-export"
                             class="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white transition-colors"
                             title="匯出 CSV">
