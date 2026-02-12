@@ -87,7 +87,8 @@ const ui = {
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
     btnFast: document.getElementById('btn-fast'),
-    tourList: document.getElementById('tournament-list')
+    tourList: document.getElementById('tournament-list'),
+    btnResetStats: document.getElementById('btn-reset-stats')
 };
 
 // Fallback Config
@@ -133,6 +134,8 @@ worker.onmessage = function (e) {
         updateLogs(payload.logs);
 
         if (steps > 0) {
+            ui.diceVisual.classList.remove('text-xl');
+            ui.diceVisual.classList.add('text-5xl');
             ui.diceVisual.textContent = steps;
         }
 
@@ -442,6 +445,16 @@ ui.btnFast.addEventListener('click', () => {
 
     worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
 });
+
+if (ui.btnResetStats) {
+    ui.btnResetStats.addEventListener('click', () => {
+        if (confirm("確定要重置所有統計數據嗎？ (Reset Stats?)")) {
+            worker.postMessage({ type: 'RESET_STATS' });
+            state.tileVisits = []; // Optimistic clear
+            updateStatsUI();
+        }
+    });
+}
 
 function endAutoRoll(finished) {
     isAutoRunning = false; // [FIX] Ensure state is reset

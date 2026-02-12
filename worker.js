@@ -92,6 +92,12 @@ self.onmessage = function (e) {
         case 'GEN_EXTRA':
             generateExtraObjects(payload.count);
             break;
+
+        case 'RESET_STATS':
+            state.tileVisits.fill(0);
+            state.collection.totalCollected = 0;
+            sendUpdate();
+            break;
     }
 };
 
