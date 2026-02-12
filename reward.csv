@@ -1,0 +1,6 @@
+reward_id,reward_type,parameter,value
+1,Gold,0,100
+2,Gem,0,10
+3,Dice,0,50
+4,Collect_Token,0,1
+5,Card,0,1

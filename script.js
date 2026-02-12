@@ -337,13 +337,13 @@ async function initGame() {
                 const match = line.match(/^(\d+),([^,]+),("?\{[^}]+\}"?|[^,]+),(.+)$/);
 
                 if (match) {
-                    const type = match[2].trim();
-                    let valStr = match[3].trim();
+                    const type = match[2].trim(); // Column 2: Type
+                    let value = match[3].trim();  // Column 3: Value
 
-                    if (valStr.startsWith('{') || valStr.startsWith('"{')) {
+                    if (value.startsWith('{') || value.startsWith('"{')) {
                         // Array parsing
-                        valStr = valStr.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
-                        const nums = valStr.split(',').map(n => parseFloat(n.trim()));
+                        value = value.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
+                        const nums = value.split(',').map(n => parseFloat(n.trim()));
                         if (nums.length === 4) {
                             if (type === 'UI_Px') systemConfig.UI_Px = nums;
                         }
@@ -351,14 +351,15 @@ async function initGame() {
                         // Number parsing or String parsing
                         // Check if it's the UI Name (String)
                         if (type === 'Collect_UI_Name') {
-                            systemConfig.Collect_UI_Name = valStr.trim();
+                            systemConfig.Collect_UI_Name = value.trim();
                         } else if (type === 'AIRPORT_Value') {
-                            systemConfig.AIRPORT_Value = parseFloat(valStr);
+                            systemConfig.AIRPORT_Value = parseFloat(value);
                         } else {
-                            const val = parseFloat(valStr);
+                            const val = parseFloat(value);
                             if (type === 'Target_Speed') systemConfig.Target_Speed = val;
                             if (type === 'Spin_CD') systemConfig.Spin_CD = val;
                             if (type === 'Collect_Item_Weight') systemConfig.Collect_Item_Weight = val;
+                            if (type === 'Collect_Item_Value') systemConfig.Collect_Item_Value = val;
                         }
                     }
                 }

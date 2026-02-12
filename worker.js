@@ -316,8 +316,8 @@ function checkCollectionEvent(pos) {
     // Logic copied from script.js
     // 4. Extra Objects (Events)
     if (state.extraObjects.has(pos)) {
-        // [FIX] Do NOT delete the object so it stays on board
-        // state.extraObjects.delete(pos);
+        // [FIX] Remove object upon collection as requested
+        state.extraObjects.delete(pos);
 
         // [NEW] Use Collect_Item_Value from config, multiply by dice multiplier
         let baseValue = 3;
@@ -339,6 +339,9 @@ function checkCollectionEvent(pos) {
             detail: `獲得 ${points} 點數 (基礎 ${baseValue} x 倍率 ${state.multiplier})`
         });
 
+        // [NEW] Respawn Logic
+        respawnItem();
+
         let currentConfig = state.collection.config.find(c => c.level === state.collection.level);
 
         // Loop for multi-level up
@@ -353,6 +356,36 @@ function checkCollectionEvent(pos) {
             // Update config for next iteration
             currentConfig = state.collection.config.find(c => c.level === state.collection.level);
         }
+    }
+}
+
+function respawnItem() {
+    const size = state.properties.length;
+    const candidates = [];
+
+    // Find all valid positions
+    for (let i = 0; i < size; i++) {
+        // Skip if occupied
+        if (state.extraObjects.has(i)) continue;
+
+        // Check adjacency
+        const next = (i + 1) % size;
+        const prev = (i - 1 + size) % size;
+
+        if (state.extraObjects.has(next) || state.extraObjects.has(prev)) continue;
+
+        // Passed checks
+        candidates.push(i);
+    }
+
+    if (candidates.length > 0) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        const newPos = candidates[idx];
+        state.extraObjects.add(newPos);
+        // Optional: Log respawn?
+        // console.log(`Respawned item at ${newPos}`);
+    } else {
+        console.warn("No valid space to respawn item!");
     }
 }
 
