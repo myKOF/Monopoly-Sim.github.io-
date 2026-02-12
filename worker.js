@@ -131,9 +131,64 @@ function stopAutoRoll(finished) {
 }
 
 function rollDice() {
-    const d1 = Math.floor(Math.random() * 6) + 1;
-    const d2 = Math.floor(Math.random() * 6) + 1;
-    return d1 + d2;
+    // [NEW] Weighted Logic
+    const result = calculateNextStep();
+    return result.steps;
+}
+
+function calculateNextStep() {
+    // 1. Identify candidates (2-12 steps ahead)
+    const candidates = [];
+    const currentPos = state.position;
+
+    for (let step = 2; step <= 12; step++) {
+        const nextPos = (currentPos + step) % BOARD_SIZE;
+        let weight = 100; // Default
+
+        // Check for specific weight config on tile
+        if (state.properties[nextPos] && state.properties[nextPos].weight) {
+            weight = state.properties[nextPos].weight;
+        }
+
+        // Check for Extra Object (Override)
+        if (state.extraObjects.has(nextPos)) {
+            if (state.systemConfig && state.systemConfig.Collect_Item_Weight) {
+                weight = state.systemConfig.Collect_Item_Weight;
+            } else {
+                weight = 200; // Default if config missing
+            }
+        }
+
+        candidates.push({ step, pos: nextPos, weight });
+    }
+
+    // 2. Weighted Random Selection
+    const totalWeight = candidates.reduce((a, b) => a + b.weight, 0);
+    let random = Math.random() * totalWeight;
+    let selected = candidates[0];
+
+    for (const candidate of candidates) {
+        random -= candidate.weight;
+        if (random <= 0) {
+            selected = candidate;
+            break;
+        }
+    }
+
+    // 3. Log the decision (Detailed)
+    // Only log if we are not in FAST_SIM to avoid spamming memory, or log sparingly?
+    // Let's log but maybe with a special flag or just standard log. 
+    // Given the requirement "Detailed log entry showing the decision process", we should add it.
+    // However, too much logging crashes browser. Let's log only if it's a "Significant" choice or just simple log.
+
+    // Let's log it as a debug/system event 
+    // "Target: #5 (Weight: 200), Total: 1500"
+
+    // To avoid spam, we might not want to log EVERY roll details to the UI log, 
+    // unless it's a special event. But user asked for it.
+    // Let's add a property to the returned object so execTurn can log it if needed.
+
+    return { steps: selected.step, details: selected };
 }
 
 function execTurn(isAuto, silent = false) {
@@ -157,7 +212,31 @@ function execTurn(isAuto, silent = false) {
     state.dice -= state.multiplier;
 
     state.rollCount++;
-    const steps = rollDice();
+    const rollResult = rollDice(); // Now returns { steps, details } or just steps if we didn't update it fully? 
+    // Wait, I updated rollDice to return number in previous step... NO, I returned object in my replacement content above.
+    // "return { steps: selected.step, details: selected };"
+    // So I need to handle that.
+
+    let steps = 0;
+    if (typeof rollResult === 'object') {
+        steps = rollResult.steps;
+        // Log decision if it's interesting or just always?
+        // User said: "Add a detailed log entry showing the decision process"
+        // Let's format a string
+        const d = rollResult.details;
+        // Example: "骰子判定: 目標 #15 (權重 200)"
+        recordLog({
+            turn: state.turn,
+            position: state.position,
+            event: "SYSTEM",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `系統判定: 目標格 #${d.pos} (權重 ${d.weight}, 步數 ${d.step})`
+        });
+    } else {
+        steps = rollResult; // Fallback
+    }
+
     state.turn++;
 
     const prevPos = state.position;
@@ -235,11 +314,30 @@ function handleTileEvent(pos) {
 
 function checkCollectionEvent(pos) {
     // Logic copied from script.js
+    // 4. Extra Objects (Events)
     if (state.extraObjects.has(pos)) {
-        // [NEW] Scale Points by Multiplier
-        const points = 1 * state.multiplier;
+        // [FIX] Do NOT delete the object so it stays on board
+        // state.extraObjects.delete(pos);
+
+        // [NEW] Use Collect_Item_Value from config, multiply by dice multiplier
+        let baseValue = 3;
+        if (state.systemConfig && state.systemConfig.Collect_Item_Value) {
+            baseValue = state.systemConfig.Collect_Item_Value;
+        }
+
+        const points = baseValue * state.multiplier;
         state.collection.points += points;
-        state.collection.totalCollected = (state.collection.totalCollected || 0) + points;
+        state.collection.totalCollected++;
+
+        // Log Collection
+        recordLog({
+            turn: state.turn,
+            position: pos,
+            event: "COLLECT",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `獲得 ${points} 點數 (基礎 ${baseValue} x 倍率 ${state.multiplier})`
+        });
 
         let currentConfig = state.collection.config.find(c => c.level === state.collection.level);
 

@@ -358,6 +358,7 @@ async function initGame() {
                             const val = parseFloat(valStr);
                             if (type === 'Target_Speed') systemConfig.Target_Speed = val;
                             if (type === 'Spin_CD') systemConfig.Spin_CD = val;
+                            if (type === 'Collect_Item_Weight') systemConfig.Collect_Item_Weight = val;
                         }
                     }
                 }
@@ -378,7 +379,8 @@ async function initGame() {
         type: 'INIT_GAME',
         payload: {
             properties: properties,
-            collectionConfig: collectionConfig
+            collectionConfig: collectionConfig,
+            systemConfig: systemConfig // [NEW] Pass system config
         }
     });
 
@@ -490,6 +492,7 @@ function parseCSV(text) {
             price: parseInt(obj.price) || parseInt(obj.base_value) || 0,
             upgrade_cost: parseInt(obj.upgrade_cost) || 0,
             probability: parseFloat(obj.probability) || 1.0,
+            weight: parseInt(obj.weight) || 100, // Default weight 100
             color: obj.color_class || 'text-white',
             level: 0,
             maxLevel: 5
