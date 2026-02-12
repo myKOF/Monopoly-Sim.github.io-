@@ -7,6 +7,7 @@ let state = {
     turn: 0,
     position: 0,
     money: INITIAL_CAPITAL,
+    gems: 0, // [NEW] Gem State
     logs: [],
     properties: [], // Receives from Main Thread
     extraObjects: new Set(),
@@ -20,8 +21,83 @@ let state = {
     logId: 0,
     dice: 1000,
     multiplier: 1,
-    systemConfig: {} // [NEW] Store system config here
+    systemConfig: {},
+    roulette: { level: 1, drawnCounts: [], config: {} } // [NEW] Roulette State
 };
+
+// ... (Existing message handling) ...
+
+function handleTileEvent(pos) {
+    if (!state.properties || !state.properties[pos]) return;
+
+    const tile = state.properties[pos];
+    const mult = state.multiplier; // Check Multiplier
+
+    checkCollectionEvent(pos);
+
+    // [NEW] Unified Reward Logic
+    // 1. Coins (Renamed from Price/BaseValue)
+    const coinVal = (tile.coin || 0) * mult;
+    if (coinVal !== 0) {
+        const type = coinVal > 0 ? "INCOME" : "EXPENSE";
+        const msg = coinVal > 0 ? `獲得收益 $${coinVal}` : `支付費用 $${Math.abs(coinVal)}`;
+        addMoney(coinVal, type, `${msg} (x${mult}, ${tile.name})`);
+    }
+
+    // 2. Gems
+    const gemVal = (tile.gem || 0) * mult;
+    if (gemVal > 0) {
+        state.gems += gemVal;
+        recordLog({
+            turn: state.turn,
+            position: pos,
+            event: "GEM",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `獲得寶石 ${gemVal} (x${mult})`
+        });
+    }
+
+    // 3. Dice
+    const diceVal = (tile.diceReward || 0) * mult;
+    if (diceVal > 0) {
+        state.dice += diceVal;
+        recordLog({
+            turn: state.turn,
+            position: pos,
+            event: "DICE",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `獲得骰子 ${diceVal} (x${mult})`
+        });
+    }
+
+    // Special Events (Keep existing override logic if needed, or merge)
+    // The new CSV values seem to replace hardcoded values for SMALL_GOLD, BIG_GOLD etc.
+    // However, AIRPORT has probability logic.
+    if (tile.type === 'AIRPORT') {
+        if (Math.random() <= tile.probability) {
+            // Airport Coin Bonus (using coin_value from CSV if set, else use system config or hardcode?)
+            // The user set coin_value in CSV for AIRPORT.
+            // If we already handled coinVal above, we might double count?
+            // Accessing the CSV, AIRPORT has coin_value 1000/1500 etc.
+            // BUT logic says "Airport Subsidy". Maybe it's ONLY if probability hits?
+            // If so, we should ONLY award coinVal inside this block.
+
+            // Revert coinVal addition above for AIRPORT? 
+            // Actually, standard logic: `coin_value` is the reward.
+            // If probability fails, we get 0. 
+            // So we should deduct the `coinVal` calculated above from `addMoney` call?
+            // Or better: Checking `tile.type` first.
+        }
+    }
+
+    // Reworking handleTileEvent to rely on CSV values but respect special types
+    // actually, let's keep the specific logic for AIRPORT/JAIL but use generic for others.
+}
+// Wait, I can't easily replace the whole function in one block if I'm thinking through it.
+// Let's rewrite `handleTileEvent` to be cleaner.
+
 
 // --- Message Handling ---
 self.onmessage = function (e) {
@@ -31,11 +107,14 @@ self.onmessage = function (e) {
         case 'INIT_GAME':
             state.properties = payload.properties;
             state.collection.config = payload.collectionConfig;
-            // [NEW] Load System Config
-            if (payload.systemConfig) {
-                state.systemConfig = payload.systemConfig;
-            }
+            state.systemConfig = payload.systemConfig || {};
+            state.roulette.config = payload.rouletteConfig || {}; // [NEW]
+            state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Initialize Tokens
+            state.isRunning = false;
+            // No sendUpdate here, as START_GAME will follow
+            break;
 
+        case 'START_GAME': // New: Separate from INIT_GAME for clearer reset
             // Reset state
             state.turn = 0;
             state.position = 0;
@@ -48,6 +127,10 @@ self.onmessage = function (e) {
             state.collection.totalCollected = 0;
             state.dice = 1000;
             state.multiplier = 1;
+            state.gems = 0; // Reset gems
+            state.roulette.level = 1; // Reset roulette level
+            state.roulette.drawnCounts = []; // Reset drawn items
+            state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Reset tokens
             sendUpdate();
             break;
 
@@ -116,6 +199,10 @@ self.onmessage = function (e) {
                 type: 'EXPORT_DATA',
                 payload: { logs: state.logs }
             });
+            break;
+
+        case 'SPIN_ROULETTE':
+            spinRoulette();
             break;
     }
 };
@@ -253,7 +340,7 @@ function execTurn(isAuto, silent = false) {
         // User said: "Add a detailed log entry showing the decision process"
         // Let's format a string
         const d = rollResult.details;
-        // Example: "骰子判定: 目標 #15 (權重 200)"
+        // Example: "骰子判定: 目標 #15 (權重 200), 步數 5"
         recordLog({
             turn: state.turn,
             position: state.position,
@@ -316,28 +403,60 @@ function handleTileEvent(pos) {
 
     checkCollectionEvent(pos);
 
-    if (tile.type === 'PROPERTY') {
-        const val = tile.price * mult;
-        if (val !== 0) {
-            const type = val > 0 ? "INCOME" : "EXPENSE";
-            const msg = val > 0 ? `獲得收益 $${val}` : `支付費用 $${Math.abs(val)}`;
-            addMoney(val, type, `${msg} (x${mult}, ${tile.name})`);
-        }
-    } else if (tile.type === 'SMALL_GOLD') {
-        const val = tile.price * mult;
-        addMoney(val, "SMALL_GOLD", `Small Gold! +$${val} (x${mult})`);
-    } else if (tile.type === 'BIG_GOLD') {
-        const val = tile.price * mult;
-        addMoney(val, "BIG_GOLD", `Big Gold! +$${val} (x${mult})`);
-    } else if (tile.type === 'AIRPORT') {
+    // [NEW] Unified Reward Logic
+    // 1. Coins (Renamed from Price/BaseValue)
+    let coinVal = (tile.coin || 0) * mult;
+
+    // Special Logic Overrides for Coins
+    if (tile.type === 'AIRPORT') {
+        // Airport probability check
         if (Math.random() <= tile.probability) {
-            const val = tile.price * mult;
-            addMoney(val, "AIRPORT", `機場補助！獲得 $${val} (x${mult})`);
+            // coinVal is already calculated from CSV coin_value
         } else {
+            coinVal = 0; // Failed probability
             recordLog({ turn: state.turn, position: pos, event: 'AIRPORT_FAIL', delta_gold: 0, current_balance: state.money, detail: `機場未發放補助 (機率 ${tile.probability * 100}%)` });
         }
     } else if (tile.type === 'GOTOJAIL') {
+        coinVal = 0; // Jail usually has no coin reward unless configured?
         recordLog({ turn: state.turn, position: pos, event: 'JAIL', delta_gold: 0, current_balance: state.money, detail: "被抓進監獄！" });
+    }
+
+    if (coinVal !== 0) {
+        const type = coinVal > 0 ? "INCOME" : "EXPENSE";
+        const msg = coinVal > 0 ? `獲得收益 $${coinVal}` : `支付費用 $${Math.abs(coinVal)}`;
+        // Use specific event names if possible
+        const eventName = tile.type === 'AIRPORT' ? 'AIRPORT' : (tile.type === 'SMALL_GOLD' ? 'SMALL_GOLD' : (tile.type === 'BIG_GOLD' ? 'BIG_GOLD' : type));
+        addMoney(coinVal, eventName, `${msg} (x${mult}, ${tile.name})`);
+    }
+
+    // 2. Gems
+    const gemVal = (tile.gem || 0) * mult;
+    if (gemVal !== 0) {
+        state.gems = Math.max(0, state.gems + gemVal); // [FIX] No negative gems
+        const msg = gemVal > 0 ? `獲得寶石 ${gemVal}` : `失去寶石 ${Math.abs(gemVal)}`;
+        recordLog({
+            turn: state.turn,
+            position: pos,
+            event: "GEM",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `${msg} (x${mult})`
+        });
+    }
+
+    // 3. Dice
+    const diceVal = (tile.diceReward || 0) * mult;
+    if (diceVal !== 0) {
+        state.dice = Math.max(0, state.dice + diceVal); // [FIX] No negative dice
+        const msg = diceVal > 0 ? `獲得骰子 ${diceVal}` : `失去骰子 ${Math.abs(diceVal)}`;
+        recordLog({
+            turn: state.turn,
+            position: pos,
+            event: "DICE",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `${msg} (x${mult})`
+        });
     }
 }
 
@@ -470,7 +589,152 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             diceRoll: lastDiceRoll,
             isAuto: isAuto,
             dice: state.dice, // Send back dice
-            multiplier: state.multiplier // Send back multiplier
+            multiplier: state.multiplier, // Send back multiplier
+            gems: state.gems, // [NEW] Send back gems
+            roulette: { level: state.roulette.level, drawnCounts: state.roulette.drawnCounts, tokens: state.roulette.tokens } // [NEW] Send back roulette state
+        }
+    });
+}
+
+// [NEW] Roulette Logic
+function spinRoulette() {
+    if ((state.roulette.tokens || 0) < 1) {
+        console.warn("Insufficient Roulette Tokens");
+        return; // UI should have prevented this
+    }
+
+    state.roulette.tokens--; // Deduct Token
+
+    const level = state.roulette.level;
+    const maxLevel = Math.max(...Object.keys(state.roulette.config).map(Number));
+    const effectiveLevel = Math.min(level, maxLevel);
+
+    const items = state.roulette.config[effectiveLevel];
+
+    if (!items) {
+        console.warn("No config for roulette level", effectiveLevel);
+        return;
+    }
+
+    // Filter available items (not drawn yet)
+    const available = items.filter(item => !state.roulette.drawnCounts.includes(item.count));
+
+    if (available.length === 0) {
+        // This should ideally not happen if LevelUp logic works correctly,
+        // but if it does, force reset for safety? Or just warn.
+        // User rule: LevelUp is grand prize. If you draw everything else...wait, LevelUp exists.
+        // If LevelUp is NOT drawn yet, available is > 0.
+        // If LevelUp IS drawn, it resets immediately.
+        console.warn("No available items in roulette level", level);
+        // If all non-levelUp items are drawn, and levelUp is not drawn, it should be the only available item.
+        // If levelUp was drawn, drawnCounts would have been reset.
+        // So this case implies a config error or all items including levelUp were drawn without reset.
+        // For safety, if this happens, we might want to force a level up or reset.
+        // For now, just warn and return.
+        return;
+    }
+
+    // Calculate total weight
+    const totalWeight = available.reduce((sum, item) => sum + item.weight, 0);
+    let random = Math.random() * totalWeight;
+    let selected = null;
+
+    for (const item of available) {
+        random -= item.weight;
+        if (random <= 0) {
+            selected = item;
+            break;
+        }
+    }
+
+    if (!selected) selected = available[available.length - 1]; // Fallback
+
+    // Process Reward
+    // const mult = 1; // Roulette rewards fixed.
+
+    // For Animation, we need to tell frontend WHAT was selected.
+    // Frontend will play animation then reveal result?
+    // Let's grant resources immediately for simplicity, but log it.
+
+    if (selected.levelUp) {
+        // Level Up Logic
+        state.roulette.drawnCounts = []; // Reset locally
+        if (state.roulette.level < maxLevel) {
+            state.roulette.level++;
+        }
+        // If Max Level reached, level stays same, but drawnCounts reset (above)
+
+        recordLog({
+            turn: state.turn,
+            position: state.position,
+            event: "ROULETTE_LEVELUP",
+            delta_gold: 0,
+            current_balance: state.money,
+            detail: `輪盤大獎！重置盤面 (Lv.${state.roulette.level})`
+        });
+    } else {
+        state.roulette.drawnCounts.push(selected.count);
+
+        // Grant Resources
+        if (selected.coin > 0) {
+            addMoney(selected.coin, "ROULETTE_COIN", `輪盤獎勵：金幣 ${selected.coin}`);
+        }
+        if (selected.gem > 0) {
+            state.gems = Math.max(0, state.gems + selected.gem);
+            recordLog({
+                turn: state.turn,
+                position: state.position,
+                event: "ROULETTE_GEM",
+                delta_gold: 0,
+                current_balance: state.money,
+                detail: `輪盤獎勵：寶石 ${selected.gem}`
+            });
+        }
+        if (selected.dice > 0) {
+            state.dice = Math.max(0, state.dice + selected.dice);
+            recordLog({
+                turn: state.turn,
+                position: state.position,
+                event: "ROULETTE_DICE",
+                delta_gold: 0,
+                current_balance: state.money,
+                detail: `輪盤獎勵：骰子 ${selected.dice}`
+            });
+        }
+    }
+
+    // Send Update with Spin Result
+    // We reuse sendUpdate but maybe attach extra payload?
+    // sendUpdate function signature: sendUpdate(lastDiceRoll = 0, isAuto = false)
+    // We can modify sendUpdate to accept optional extra payload.
+    // Or just manually post message here.
+
+    // Better: Helper function
+    sendRouletteUpdate(selected);
+}
+
+function sendRouletteUpdate(spinResultItem) {
+    self.postMessage({
+        type: 'UPDATE_UI',
+        payload: {
+            turn: state.turn,
+            position: state.position,
+            money: state.money,
+            logs: state.logs,
+            tileVisits: state.tileVisits,
+            extraObjects: Array.from(state.extraObjects),
+            collection: state.collection,
+            diceRoll: 0,
+            isAuto: false, // Roulette doesn't count as auto move?
+            dice: state.dice,
+            multiplier: state.multiplier,
+            gems: state.gems,
+            roulette: {
+                level: state.roulette.level,
+                drawnCounts: state.roulette.drawnCounts,
+                tokens: state.roulette.tokens, // [NEW]
+                lastSpinResult: spinResultItem // [NEW] Pass result for animation
+            }
         }
     });
 }

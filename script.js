@@ -35,6 +35,42 @@ window.onerror = function (msg, url, line, col, error) {
     return false;
 };
 
+// [NEW] Parse Roulette CSV
+function parseRouletteCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    const config = {}; // { level: [items] }
+
+    lines.slice(1).forEach(line => {
+        const parts = line.split(',');
+        if (parts.length < 8) return;
+
+        // id,level,count,weight,coin_value,gem_value,dice_value,level_up
+        const id = parseInt(parts[0]);
+        const level = parseInt(parts[1]);
+        const count = parseInt(parts[2]);
+        const weight = parseInt(parts[3]) || 0;
+        const coin = parts[4] ? parseInt(parts[4]) : 0;
+        const gem = parts[5] ? parseInt(parts[5]) : 0;
+        const dice = parts[6] ? parseInt(parts[6]) : 0;
+        const levelUp = parts[7] && parts[7].trim() === '1';
+
+        if (!config[level]) config[level] = [];
+
+        config[level].push({
+            id,
+            level,
+            count, // 1-12
+            weight,
+            coin,
+            gem,
+            dice,
+            levelUp
+        });
+    });
+
+    return config;
+}
+
 // --- WORKER INTEGRATION ---
 const worker = new Worker('worker.js');
 
@@ -130,6 +166,24 @@ worker.onmessage = function (e) {
         state.collection = payload.collection;
         if (payload.dice !== undefined) state.dice = payload.dice;
         if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
+        if (payload.gems !== undefined) {
+            state.gems = payload.gems;
+        }
+
+        // [NEW] Roulette State Sync
+        if (payload.roulette) {
+            const oldLevel = state.roulette ? state.roulette.level : 1;
+            state.roulette = payload.roulette; // Sync State
+
+            updateRouletteUI(); // Update Tokens/Level/Disabled items
+
+            // Check if we need to animate a spin result
+            if (payload.roulette.lastSpinResult) {
+                // If in AUTO mode, we might want faster animation or skip?
+                // User said "animation like board game". Let's animate.
+                animateRoulette(payload.roulette.lastSpinResult);
+            }
+        }
 
         updateLogs(payload.logs);
 
@@ -344,8 +398,14 @@ function updateLogs(newLogs) {
 async function initGame() {
     // 1. Fetch Data First (Main Thread)
     // We still do fetch in Main Thread because it's easier to debug network tab here
+    // We use the global variables declared at the top
     let properties = [];
-    let collectionConfig = [];
+    collectionConfig = []; // [FIX] Use global
+    rouletteConfig = {}; // [FIX] Use global
+    // rouletteInterval is global and managed elsewhere, no need to init here except maybe clear?
+    if (rouletteInterval) clearInterval(rouletteInterval);
+    rouletteInterval = null;
+    // systemConfig is already declared as a const globally, no need to redeclare here.
 
     try {
         const response = await fetch('./board_config.csv');
@@ -435,13 +495,26 @@ async function initGame() {
         console.warn("System Config Load Failed, using defaults", e);
     }
 
-    // 3. Initialize Worker
+    // 3. Load Roulette Config (New)
+    try {
+        const response = await fetch('./lucky_loulette.csv');
+        if (response.ok) {
+            const text = await response.text();
+            rouletteConfig = parseRouletteCSV(text);
+            console.log("Roulette Config Loaded:", rouletteConfig);
+        }
+    } catch (e) {
+        console.warn("Roulette Config Load Failed", e);
+    }
+
+    // 4. Initialize Worker
     worker.postMessage({
         type: 'INIT_GAME',
         payload: {
             properties: properties,
             collectionConfig: collectionConfig,
-            systemConfig: systemConfig // [NEW] Pass system config
+            systemConfig: systemConfig,
+            rouletteConfig: rouletteConfig // [NEW] Pass roulette config
         }
     });
 
@@ -567,6 +640,230 @@ function endAutoRoll(finished) {
 }
 
 
+// [NEW] Roulette UI Logic
+const uiRouletteModal = document.getElementById('roulette-modal');
+const uiRouletteLevel = document.getElementById('roulette-level');
+const uiRouletteTokens = document.getElementById('roulette-tokens');
+const uiRouletteWheel = document.getElementById('roulette-wheel');
+const btnRouletteSpin = document.getElementById('btn-roulette-spin');
+const btnRouletteAuto = document.getElementById('btn-roulette-auto');
+
+document.getElementById('btn-roulette-open').addEventListener('click', openRoulette);
+document.getElementById('btn-roulette-close').addEventListener('click', closeRoulette);
+btnRouletteSpin.addEventListener('click', () => spinRoulette(false));
+btnRouletteAuto.addEventListener('click', toggleAutoRoulette);
+
+function openRoulette() {
+    uiRouletteModal.classList.remove('hidden');
+    // Force reflow
+    void uiRouletteModal.offsetWidth;
+    uiRouletteModal.classList.remove('opacity-0');
+    renderRoulette();
+    updateRouletteUI();
+}
+
+function closeRoulette() {
+    uiRouletteModal.classList.add('opacity-0');
+    setTimeout(() => {
+        uiRouletteModal.classList.add('hidden');
+    }, 300);
+    // Stop Auto if closed?
+    if (rouletteInterval) toggleAutoRoulette();
+}
+
+function renderRoulette() {
+    uiRouletteWheel.innerHTML = '';
+    const level = state.roulette ? state.roulette.level : 1;
+
+    // Config: level -> items
+    // Handle Max Level logic: if level > max config key, use max key
+    const maxLevel = Math.max(...Object.keys(rouletteConfig).map(Number));
+    const effectiveLevel = Math.min(level, maxLevel);
+
+    const items = rouletteConfig[effectiveLevel] || [];
+
+    // We expect 12 items. If fewer, we map by ID or just index?
+    // CSV count is 1-12.
+    // Angle: -90 deg is top.
+
+    items.forEach((item) => {
+        // item.count is 1-12.
+        // Index 0 (Top) -> Item 1?
+        // Let's verify CSV: ID 1, Count 1. ID 7, Count 7.
+        // Item 1 at Top (-90 deg). Item 7 at Bottom (90 deg).
+        // 12 Items: 360 / 12 = 30 deg.
+        // Position index = item.count - 1;
+        const idx = item.count - 1;
+        const angle = idx * 30 - 90;
+        const radius = 130; // Radius from center
+
+        const el = document.createElement('div');
+        el.className = `absolute w-12 h-12 -ml-6 -mt-6 rounded-lg border flex flex-col items-center justify-center text-[10px] shadow-lg transition-all transform duration-300`;
+        el.style.left = '50%';
+        el.style.top = '50%';
+        el.style.transform = `rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)`;
+        el.id = `roulette-item-${item.count}`;
+
+        // Styling based on Type
+        // Grand Prize (Level Up): Top (1) and Bottom (7) or explicitly marked?
+        // CSV: level_up column.
+        if (item.levelUp) {
+            el.classList.add('bg-yellow-500', 'border-yellow-300', 'text-black', 'font-bold', 'z-10');
+            el.innerHTML = '⚡LEVEL<br>UP';
+        } else {
+            el.classList.add('bg-vibe-card', 'border-white/10', 'text-gray-300');
+            // Icon
+            let icon = '❓';
+            if (item.coin) icon = '💰';
+            if (item.gem) icon = '💎';
+            if (item.dice) icon = '🎲';
+
+            // Value
+            let val = item.coin || item.gem || item.dice || '';
+
+            el.innerHTML = `<span class="text-sm">${icon}</span><span>${val}</span>`;
+        }
+
+        uiRouletteWheel.appendChild(el);
+    });
+}
+
+function updateRouletteUI() {
+    if (!state.roulette) return;
+
+    uiRouletteLevel.textContent = `Lv.${state.roulette.level}`;
+    uiRouletteTokens.textContent = state.roulette.tokens;
+    document.getElementById('roulette-token-display').textContent = state.roulette.tokens;
+
+    // Gray out drawn items
+    const drawn = state.roulette.drawnCounts || [];
+    const items = document.querySelectorAll('[id^="roulette-item-"]');
+    items.forEach(el => {
+        const count = parseInt(el.id.replace('roulette-item-', ''));
+        if (drawn.includes(count)) {
+            el.classList.add('opacity-30', 'grayscale');
+            el.classList.remove('z-10', 'scale-110', 'border-neon-pink'); // Remove active effects
+        } else {
+            el.classList.remove('opacity-30', 'grayscale');
+        }
+    });
+
+    // Disable Spin if no tokens
+    if (state.roulette.tokens < 1) {
+        btnRouletteSpin.disabled = true;
+        if (rouletteInterval) toggleAutoRoulette(); // Stop auto
+    } else {
+        btnRouletteSpin.disabled = false;
+    }
+}
+
+let isSpinning = false;
+
+function spinRoulette(isAuto = false) {
+    if (isSpinning && !isAuto) return; // Wait for animation
+    if (state.roulette.tokens < 1) return;
+
+    worker.postMessage({ type: 'SPIN_ROULETTE' });
+}
+
+function toggleAutoRoulette() {
+    if (rouletteInterval) {
+        clearInterval(rouletteInterval);
+        rouletteInterval = null;
+        btnRouletteAuto.classList.remove('bg-yellow-500/20', 'border-yellow-500');
+        btnRouletteAuto.classList.add('border-yellow-500/30');
+    } else {
+        if (state.roulette.tokens < 1) return;
+        btnRouletteAuto.classList.add('bg-yellow-500/20', 'border-yellow-500');
+        btnRouletteAuto.classList.remove('border-yellow-500/30');
+
+        spinRoulette(true); // Trigger first
+        // Interval: Animation duration + delay?
+        // Animation takes ~1-2s. Let's set interval to check state?
+        // Actually, better to chain it: animate -> finish -> if auto -> spin again.
+        // So let's NOT use setInterval for logic, just setting a flag `isAutoRoulette`.
+        // But user asked for "AUTO Button".
+
+        // Revised Auto Logic:
+        // Set flag -> Spin.
+        // Animation End -> Check Flag -> Spin again.
+        rouletteInterval = true; // Use as flag
+    }
+}
+
+function animateRoulette(targetItem) {
+    isSpinning = true;
+    btnRouletteSpin.disabled = true;
+
+    const targetCount = targetItem.count;
+    // Highlight items in circle
+    // 1 -> 2 -> ... -> 12 -> 1 ... -> Target
+
+    let current = 1;
+    let loops = 2; // Spin 2 times full?
+    let speed = 50;
+    let step = 0;
+    const totalSteps = 12 * loops + (targetCount - 1); // Assuming starting from 1
+
+    // Just a visual highlight
+    const highlight = (count) => {
+        const els = document.querySelectorAll('[id^="roulette-item-"]');
+        els.forEach(el => el.classList.remove('ring-2', 'ring-neon-pink', 'scale-110', 'bg-white/10'));
+
+        const el = document.getElementById(`roulette-item-${count}`);
+        if (el) {
+            el.classList.add('ring-2', 'ring-neon-pink', 'scale-110', 'bg-white/10');
+        }
+    };
+
+    const runStep = () => {
+        highlight(current);
+
+        if (current === targetCount && step > 12 * loops) {
+            // Done
+            isSpinning = false;
+            updateRouletteUI(); // Reveal/Audit state
+
+            // Show Result Popup or Effect?
+            // Item flashes
+            const el = document.getElementById(`roulette-item-${targetCount}`);
+            if (el) {
+                el.classList.add('animate-bounce');
+                setTimeout(() => el.classList.remove('animate-bounce'), 1000);
+            }
+
+            // If Level Up, we might want to re-render board after a delay
+            if (targetItem.levelUp) {
+                setTimeout(() => {
+                    renderRoulette(); // Re-render for new level (clears drawn state visual)
+                    updateRouletteUI();
+                }, 1000);
+            }
+
+            // Auto Chain
+            if (rouletteInterval && state.roulette.tokens > 0) {
+                setTimeout(() => spinRoulette(true), 500);
+            } else if (rouletteInterval && state.roulette.tokens < 1) {
+                toggleAutoRoulette(); // Stop
+            }
+
+            return;
+        }
+
+        current++;
+        if (current > 12) current = 1;
+        step++;
+
+        // Decelerate
+        if (step > 12 * loops - 5) speed += 30;
+
+        setTimeout(runStep, speed);
+    };
+
+    runStep();
+}
+
+
 // --- Helper Functions (Purely for Rendering / Parsing) ---
 // ... Copy existing renderBoard, updateUI, parseCSV, getGridPos ...
 
@@ -584,10 +881,14 @@ function parseCSV(text) {
             icon: obj.icon || '⬛',
             type: obj.type || 'PROPERTY',
             name: obj.name || 'Unknown',
-            price: parseInt(obj.price) || parseInt(obj.base_value) || 0,
+            // [NEW] Use coin_value, gem_value, dice_value
+            coin: parseInt(obj.coin_value) || parseInt(obj.base_value) || 0,
+            gem: parseInt(obj.gem_value) || 0,
+            diceReward: parseInt(obj.dice_value) || 0,
+
             upgrade_cost: parseInt(obj.upgrade_cost) || 0,
             probability: parseFloat(obj.probability) || 1.0,
-            weight: parseInt(obj.weight) || 100, // Default weight 100
+            weight: parseInt(obj.weight) || 100,
             color: obj.color_class || 'text-white',
             level: 0,
             maxLevel: 5
@@ -766,6 +1067,10 @@ function updateUI() {
         ui.btnRoll.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
         ui.btnRoll.title = "";
     }
+
+    // [NEW] Update Gems
+    const gemsEl = document.getElementById('display-gems');
+    if (gemsEl) gemsEl.textContent = state.gems !== undefined ? state.gems : 0;
 }
 
 function updateStatsUI() {

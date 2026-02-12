@@ -80,13 +80,22 @@
                     class="absolute inset-[13%] bg-vibe-dark/80 rounded-xl border border-white/5 flex flex-col items-center justify-center p-6 gap-6 backdrop-blur-md z-10">
 
                     <!-- Stats -->
-                    <div class="flex gap-8 w-full justify-center">
+                    <div class="flex gap-4 w-full justify-center">
                         <div class="text-center group">
-                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">總資產 (Balance)</div>
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">金幣 (Coins)</div>
                             <div
                                 class="flex items-baseline justify-center gap-1 group-hover:scale-110 transition-transform duration-300">
                                 <span class="text-neon-green font-bold">$</span>
                                 <span id="display-money" class="text-3xl font-bold text-white">0</span>
+                            </div>
+                        </div>
+                        <div class="w-px bg-white/10"></div>
+                        <div class="text-center group">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">寶石 (Gems)</div>
+                            <div
+                                class="flex items-baseline justify-center gap-1 group-hover:scale-110 transition-transform duration-300">
+                                <span class="text-neon-pink font-bold">💎</span>
+                                <span id="display-gems" class="text-3xl font-bold text-white">0</span>
                             </div>
                         </div>
                         <div class="w-px bg-white/10"></div>
@@ -300,7 +309,7 @@
             class="w-96 border-l border-white/10 bg-vibe-dark/80 backdrop-blur-md flex flex-col shrink-0 z-20 shadow-2xl">
 
             <!-- Top: Statistics -->
-            <div class="h-1/2 flex flex-col border-b border-white/10">
+            <div class="h-1/3 flex flex-col border-b border-white/10">
                 <div class="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
                     <h2 class="text-xs font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
                         <span class="text-base text-neon-green">📊</span> 數據統計
@@ -336,8 +345,40 @@
                 </div>
             </div>
 
+            <!-- Middle: Activity Panel -->
+            <div class="h-1/3 border-b border-white/10 bg-vibe-dark/80 flex flex-col backdrop-blur-md">
+                <div class="p-3 border-b border-white/10 bg-white/5 flex justify-between items-center">
+                    <h2 id="collection-title" class="text-xs font-bold text-gray-300 uppercase tracking-widest">特殊物件蒐集
+                    </h2>
+                    <div
+                        class="px-2 py-0.5 rounded bg-neon-purple/20 border border-neon-purple/30 text-[10px] text-neon-purple font-mono">
+                        Lv.<span id="col-level">1</span>
+                    </div>
+                </div>
+                <div class="p-4 flex-1 flex flex-col justify-center gap-4">
+                    <div class="flex justify-between items-end text-xs text-gray-400 font-mono">
+                        <span>進度 (Progress)</span>
+                        <span class="text-white"><span id="col-points"
+                                class="text-neon-purple font-bold text-lg">0</span> / <span
+                                id="col-target">100</span></span>
+                    </div>
+                    <div class="h-2 bg-gray-700/50 rounded-full overflow-hidden">
+                        <div id="col-bar"
+                            class="h-full bg-gradient-to-r from-neon-purple to-pink-500 w-0 transition-all duration-500">
+                        </div>
+                    </div>
+                    <!-- Roulette Launch Button -->
+                    <button id="btn-roulette-open"
+                        class="mt-2 w-full py-2 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black font-bold rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <span>🎰 幸運輪盤 (Lucky Roulette)</span>
+                        <span id="roulette-token-display"
+                            class="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-mono text-white">100</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Bottom: Logs -->
-            <div class="h-1/2 flex flex-col">
+            <div class="h-1/3 flex flex-col">
                 <div class="p-3 border-b border-white/10 bg-white/5 flex justify-between items-center">
                     <h2 class="text-xs font-bold text-gray-300 uppercase tracking-widest">系統紀錄 (Logs)</h2>
                     <div class="flex items-center gap-2">
@@ -369,6 +410,57 @@
             </div>
         </section>
     </main>
+
+    <!-- Roulette Modal -->
+    <div id="roulette-modal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+        <div
+            class="relative bg-vibe-dark border border-yellow-500/30 rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.2)] p-8 w-[500px] flex flex-col items-center">
+            <!-- Close Button -->
+            <button id="btn-roulette-close"
+                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+
+            <!-- Header -->
+            <h2 class="text-2xl font-bold text-yellow-400 tracking-wider mb-2 flex items-center gap-2">
+                <span>🎰 幸運輪盤</span>
+                <span id="roulette-level"
+                    class="text-sm bg-yellow-500/20 border border-yellow-500/40 px-2 py-0.5 rounded text-yellow-300">Lv.1</span>
+            </h2>
+            <div class="text-xs text-gray-400 mb-8 font-mono">消耗代幣抽取稀有獎勵！大獎可升級盤面。</div>
+
+            <!-- Wheel Container -->
+            <div class="relative w-[320px] h-[320px] mb-8">
+                <!-- Center Info -->
+                <div
+                    class="absolute inset-[35%] bg-vibe-dark rounded-full border border-white/10 flex flex-col items-center justify-center z-10 shadow-inner">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">TOKENS</div>
+                    <div id="roulette-tokens" class="text-3xl font-bold text-white font-mono">100</div>
+                </div>
+
+                <!-- Items Container (Rotated via JS) -->
+                <div id="roulette-wheel" class="absolute inset-0 rounded-full border border-white/5">
+                    <!-- Items injected via JS: 12 items -->
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex gap-4 w-full">
+                <button id="btn-roulette-spin"
+                    class="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    SPIN (1 Token)
+                </button>
+                <button id="btn-roulette-auto"
+                    class="flex-none px-6 py-3 border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 font-bold rounded-xl transition-all active:scale-95">
+                    AUTO
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
