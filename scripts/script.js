@@ -94,7 +94,7 @@ function parseRouletteCSV(csvText) {
 // --- WORKER INTEGRATION ---
 let worker;
 try {
-    worker = new Worker('worker.js');
+    worker = new Worker('scripts/worker.js');
 } catch (e) {
     alert("⚠️ 無法載入本地 Worker 腳本 (CORS 安全性限制)。\n\n您目前似乎是直接雙擊開啟 HTML (file://)。請改用 Live Server 或將檔案放置於伺服器環境開啟，以正常執行遊戲！\n\n錯誤資訊：" + e.message);
     throw e; // Stop execution
@@ -440,7 +440,7 @@ async function initGame() {
     // systemConfig is already declared as a const globally, no need to redeclare here.
 
     try {
-        const response = await fetch('./board_config.csv');
+        const response = await fetch('./config/board_config.csv');
         if (response.ok) {
             const text = await response.text();
             properties = parseCSV(text);
@@ -459,7 +459,7 @@ async function initGame() {
     state.properties = properties; // Set local for rendering
 
     try {
-        const response = await fetch('./collect_item.csv');
+        const response = await fetch('./config/collect_item.csv');
         if (response.ok) {
             collectionConfig = parseCollectionCSV(await response.text());
         }
@@ -467,7 +467,7 @@ async function initGame() {
 
     // 2. Load System Config (Async)
     try {
-        const response = await fetch('./system_config.csv?' + new Date().getTime());
+        const response = await fetch('./config/system_config.csv?' + new Date().getTime());
         if (response.ok) {
             // [FIX] Use ArrayBuffer + TextDecoder to handle Big5 encoding (common in Excel/Windows)
             const buffer = await response.arrayBuffer();
@@ -532,14 +532,14 @@ async function initGame() {
 
     // 3. Load Roulette Config (New)
     try {
-        const response = await fetch('./lucky_loulette.csv');
+        const response = await fetch('./config/lucky_loulette.csv');
         if (response.ok) {
             const text = await response.text();
             rouletteConfig = parseRouletteCSV(text);
             console.log("Roulette Config Loaded:", rouletteConfig);
         }
 
-        const reqIntegral = await fetch('./lucky_loulette_integral.csv');
+        const reqIntegral = await fetch('./config/lucky_loulette_integral.csv');
         if (reqIntegral.ok) {
             const textIntegral = await reqIntegral.text();
             rouletteIntegralConfig = parseRouletteIntegralCSV(textIntegral);
@@ -569,7 +569,7 @@ async function initGame() {
 
     // 4. Load Tournament Data
     try {
-        const response = await fetch('./ranking_tournament.csv');
+        const response = await fetch('./config/ranking_tournament.csv');
         if (response.ok) {
             const buffer = await response.arrayBuffer();
             const decoder = new TextDecoder('big5');
@@ -579,7 +579,7 @@ async function initGame() {
 
             // [NEW] Load Integral Config
             try {
-                const resIntegral = await fetch('./ranking_tournament_integral.csv');
+                const resIntegral = await fetch('./config/ranking_tournament_integral.csv');
                 if (resIntegral.ok) {
                     const buf = await resIntegral.arrayBuffer();
                     const txt = decoder.decode(buf);
