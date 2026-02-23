@@ -284,7 +284,6 @@ function startFastLoop() {
                 return;
             }
             execTurn(true, true);
-            state.rollCount++;
         }
 
         // Send Progress every 1% or at least every 100 turns
@@ -472,6 +471,9 @@ function handleTileEvent(pos) {
         // Airport probability check
         if (Math.random() <= tile.probability) {
             // coinVal is already calculated from CSV coin_value
+            // [NEW] Record tournament points for this turn
+            const baseBonus = (state.systemConfig && state.systemConfig.AIRPORT_Value) ? state.systemConfig.AIRPORT_Value : 50;
+            state.pendingTournamentBonus = (state.pendingTournamentBonus || 0) + (baseBonus * mult);
         } else {
             coinVal = 0; // Failed probability
             recordLog({ turn: state.turn, position: pos, event: 'AIRPORT_FAIL', delta_gold: 0, current_balance: state.money, detail: `機場未發放補助 (機率 ${tile.probability * 100}%)` });
@@ -635,30 +637,35 @@ function generateExtraObjects(count) {
 }
 
 function sendUpdate(lastDiceRoll = 0, isAuto = false) {
-    // Send a snapshot of the state to the main thread
+    const payload = {
+        turn: state.turn,
+        position: state.position,
+        money: state.money,
+        logs: state.logs, // Send full logs or delta? Full for simplicity now
+        tileVisits: state.tileVisits,
+        extraObjects: Array.from(state.extraObjects),
+        collection: state.collection,
+        diceRoll: lastDiceRoll,
+        isAuto: isAuto,
+        dice: state.dice, // Send back dice
+        multiplier: state.multiplier, // Send back multiplier
+        gems: state.gems, // [NEW] Send back gems
+        roulette: {
+            level: state.roulette.level,
+            drawnCounts: state.roulette.drawnCounts,
+            tokens: state.roulette.tokens,
+            integral: state.roulette.integral, // Send integral state
+            stats: state.roulette.stats // Send stats 
+        },
+        tournamentBonus: state.pendingTournamentBonus || 0 // [NEW] Pass tournament points
+    };
+
+    // Reset pending bonus after sending
+    state.pendingTournamentBonus = 0;
+
     self.postMessage({
         type: 'UPDATE_UI',
-        payload: {
-            turn: state.turn,
-            position: state.position,
-            money: state.money,
-            logs: state.logs, // Send full logs or delta? Full for simplicity now
-            tileVisits: state.tileVisits,
-            extraObjects: Array.from(state.extraObjects),
-            collection: state.collection,
-            diceRoll: lastDiceRoll,
-            isAuto: isAuto,
-            dice: state.dice, // Send back dice
-            multiplier: state.multiplier, // Send back multiplier
-            gems: state.gems, // [NEW] Send back gems
-            roulette: {
-                level: state.roulette.level,
-                drawnCounts: state.roulette.drawnCounts,
-                tokens: state.roulette.tokens,
-                integral: state.roulette.integral, // Send integral state
-                stats: state.roulette.stats // Send stats 
-            }
-        }
+        payload: payload
     });
 }
 

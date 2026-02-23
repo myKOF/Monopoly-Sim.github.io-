@@ -231,11 +231,38 @@ worker.onmessage = function (e) {
         // If the UI is in "Auto Play" mode (btnAuto hidden), we should animate.
         // If the UI is in "Fast Sim" mode (btnFast disabled), we might want to skip animation.
 
-        const isFastMode = ui.btnFast.disabled === true && ui.btnAuto.classList.contains('hidden') === false;
-        // Wait, button states are tricky. Let's rely on checking if we are "stopping" or "running".
+        // [NEW] Process Tournament Bonus from Worker (Works for BOTH Fast Sim and Auto Play)
+        if (payload.tournamentBonus && payload.tournamentBonus > 0) {
+            state.tournament.playerScore += payload.tournamentBonus;
 
-        // const isAutoRunning = !ui.btnAuto.classList.contains('hidden') === false; // [FIX] Removed local var
-        // Now using global isAutoRunning
+            // Integral Logic
+            if (state.tournament.integral && state.tournament.integralConfig) {
+                state.tournament.integral.score += payload.tournamentBonus;
+                let currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+                while (currentCfg && state.tournament.integral.score >= currentCfg.required) {
+                    state.tournament.integral.score -= currentCfg.required;
+                    state.tournament.integral.level++;
+
+                    const reward = currentCfg.reward;
+                    worker.postMessage({
+                        type: 'ADD_MONEY',
+                        payload: {
+                            amount: reward,
+                            reason: "TOURNAMENT_INTEGRAL",
+                            desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`
+                        }
+                    });
+                    currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+                }
+            }
+            renderTournamentUI();
+
+            // Visual Feedback (Log) - Only if not Fast Sim to avoid too much DOM manipulation, or just log always?
+            // Actually worker already logs 'AIRPORT' in addMoney. So we don't need a custom UI log prepend here anymore, 
+            // but just in case, we'll let worker handle logs.
+        }
+
+        const isFastMode = ui.btnFast.disabled === true && ui.btnAuto.classList.contains('hidden') === false;
 
         if (isFastMode) {
             // Instant Update (Fast Sim)
@@ -265,53 +292,6 @@ worker.onmessage = function (e) {
                     setTimeout(() => {
                         worker.postMessage({ type: 'NEXT_TURN' });
                     }, systemConfig.Spin_CD * 1000);
-                }
-
-                // Check for Airport (Tournament Scoring)
-                const tile = state.properties[payload.position];
-                if (tile && tile.type === 'AIRPORT') {
-                    // Add score
-                    const baseBonus = systemConfig.AIRPORT_Value || 50;
-                    const bonus = baseBonus * (state.multiplier || 1);
-                    state.tournament.playerScore += bonus;
-
-                    // [NEW] Integral Logic
-                    if (state.tournament.integral && state.tournament.integralConfig) {
-                        state.tournament.integral.score += bonus;
-
-                        // Check Level Up
-                        let currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
-                        while (currentCfg && state.tournament.integral.score >= currentCfg.required) {
-                            // Level Up!
-                            state.tournament.integral.score -= currentCfg.required;
-                            state.tournament.integral.level++;
-
-                            // Give Reward
-                            const reward = currentCfg.reward;
-                            worker.postMessage({
-                                type: 'ADD_MONEY',
-                                payload: {
-                                    amount: reward,
-                                    reason: "TOURNAMENT_INTEGRAL",
-                                    desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`
-                                }
-                            });
-
-                            // Check next level
-                            currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
-                        }
-                    }
-
-                    renderTournamentUI();
-
-                    // Visual Feedback (Log) - Use same format as worker logs but local
-                    const logDiv = document.createElement('div');
-                    logDiv.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
-                    logDiv.innerHTML = `
-                        <span class="text-gray-600 w-6">#${state.turn}</span>
-                        <span class="flex-1 text-yellow-400 truncate">抵達機場! 積分 +${bonus} (x${state.multiplier || 1})</span>
-                     `;
-                    ui.logContainer.prepend(logDiv);
                 }
             });
         } else {
@@ -471,7 +451,7 @@ async function initGame() {
         if (response.ok) {
             // [FIX] Use ArrayBuffer + TextDecoder to handle Big5 encoding (common in Excel/Windows)
             const buffer = await response.arrayBuffer();
-            const decoder = new TextDecoder('big5');
+            const decoder = new TextDecoder('utf-8');
             const text = decoder.decode(buffer);
 
             // Parse manual csv
@@ -572,7 +552,7 @@ async function initGame() {
         const response = await fetch('./config/ranking_tournament.csv');
         if (response.ok) {
             const buffer = await response.arrayBuffer();
-            const decoder = new TextDecoder('big5');
+            const decoder = new TextDecoder('utf-8');
             const text = decoder.decode(buffer);
 
             state.tournament.participants = parseTournamentCSV(text);
@@ -1306,7 +1286,7 @@ function renderBoard() {
             let content;
             if (tile.type === 'PROPERTY') {
                 content = `<div class="font-bold ${tile.color} text-[10px]">${icon} ${tile.name}</div>
-                            <div class="text-[9px] text-gray-400 mt-1">$${tile.price}</div>`;
+                            <div class="text-[9px] text-gray-400 mt-1">$${tile.coin}</div>`;
             } else {
                 content = `<div class="font-bold ${tile.color} text-xl" title="${tile.name}">${icon}</div>`;
             }
