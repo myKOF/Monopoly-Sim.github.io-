@@ -231,6 +231,39 @@ self.onmessage = function (e) {
         case 'SPIN_ROULETTE':
             spinRoulette();
             break;
+        case 'RESET_ROULETTE':
+            state.roulette.level = 1;
+            state.roulette.drawnCounts = [];
+            state.roulette.tokens = (state.systemConfig && state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100;
+            state.roulette.integral = { score: 0, level: 1 };
+            state.roulette.stats = { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} };
+
+            // Broadcast new state immediately
+            self.postMessage({
+                type: 'UPDATE_UI',
+                payload: {
+                    turn: state.turn,
+                    position: state.position,
+                    money: state.money,
+                    logs: state.logs,
+                    tileVisits: state.tileVisits,
+                    extraObjects: Array.from(state.extraObjects),
+                    collection: state.collection,
+                    diceRoll: 0,
+                    isAuto: false,
+                    dice: state.dice,
+                    multiplier: state.multiplier,
+                    gems: state.gems,
+                    roulette: {
+                        level: state.roulette.level,
+                        drawnCounts: state.roulette.drawnCounts,
+                        tokens: state.roulette.tokens,
+                        integral: state.roulette.integral,
+                        stats: state.roulette.stats
+                    }
+                }
+            });
+            break;
     }
 };
 

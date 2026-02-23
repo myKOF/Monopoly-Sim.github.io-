@@ -1,12 +1,12 @@
-id,type,value,desc
-1,Target_Speed,0.05,�Ѥl���ʳt�׶��j�ɶ�
-2,Spin_CD,0.35,�C���۰��Y��CD
-3,UI_Px,"{10,10,5,5}",UI�ϧl�ĪG���Z(�W�U���k)
-4,Collect_UI_Name,�ϼзj��,�ϼзj��UI���W��
-5,AIRPORT_Value,50,�����A���ɤ���
-6,Collect_Item_Weight,2000,�ϼзj���v��
-7,Collect_Item_Value,3,�ϼзj������
-8,Roulette_Token_Initial,100,���B���L�w�]�N���ƶq
-9,Roulette_Speed,0.1,���B���L��ʳt��(�C�����ʶ��j�ɶ�����)
-10,Roulette_Time,"{1.8,4}",���B���L�C������H���ɶ�
-11,Roulette_Token_Value,1,���B���L�C�������o�n��
+﻿id,type,value,desc
+1,Target_Speed,0.05,目標移動速度(秒) 越低越快
+2,Spin_CD,0.35,自動模式下兩次擲骰間的CD
+3,UI_Px,"{10,10,5,5}",UI邊距 上下左右(未實裝功能)
+4,Collect_UI_Name,特殊物件,蒐集活動UI顯示名稱
+5,AIRPORT_Value,50,抵達機場時增加的積分
+6,Collect_Item_Weight,2000,特殊物件生成權重
+7,Collect_Item_Value,3,特殊物件積分價值
+8,Roulette_Token_Initial,100,輪盤初始代幣數量
+9,Roulette_Speed,0.1,輪盤基礎旋轉速度(秒)(動畫尚未實裝)
+10,Roulette_Time,"{1.8,4}",輪盤旋轉最少與最多時間區間
+11,Roulette_Token_Value,1,輪盤每次抽取獲得之積分

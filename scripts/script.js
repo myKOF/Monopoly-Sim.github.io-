@@ -711,6 +711,22 @@ document.getElementById('btn-roulette-close').addEventListener('click', closeRou
 btnRouletteSpin.addEventListener('click', () => spinRoulette(false));
 btnRouletteAuto.addEventListener('click', toggleAutoRoulette);
 
+const btnResetRoulette = document.getElementById('btn-reset-roulette');
+if (btnResetRoulette) {
+    btnResetRoulette.addEventListener('click', () => {
+        if (confirm("確定要重置整個輪盤活動包含統計數據嗎？ (Reset Roulette?)")) {
+            worker.postMessage({ type: 'RESET_ROULETTE' });
+            // Optimistic stat clear UI
+            document.getElementById('stat-r-coin').textContent = '0';
+            document.getElementById('stat-r-gem').textContent = '0';
+            document.getElementById('stat-r-dice').textContent = '0';
+            document.getElementById('stat-r-landings').innerHTML = '';
+            document.getElementById('stat-r-tokens').innerHTML = '';
+            document.getElementById('stat-r-spins').textContent = 'Spins: 0';
+        }
+    });
+}
+
 function openRoulette() {
     uiRouletteModal.classList.remove('hidden');
     // Force reflow
