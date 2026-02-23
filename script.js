@@ -1,6 +1,10 @@
 // Game Configuration
 const BOARD_SIZE = 52;
 let INITIAL_CAPITAL = 5000;
+let collectionConfig = [];
+let rouletteConfig = {};
+let rouletteIntegralConfig = [];
+let rouletteInterval = null;
 
 // debug: visual error logger (Keep this)
 window.onerror = function (msg, url, line, col, error) {
@@ -34,6 +38,22 @@ window.onerror = function (msg, url, line, col, error) {
     document.body.appendChild(errDiv);
     return false;
 };
+
+// [NEW] Parse Roulette Integral CSV
+function parseRouletteIntegralCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const p = line.split(',');
+        if (p.length < 2) return null;
+        return {
+            level: parseInt(p[0].trim()),
+            required: parseInt(p[1].trim()),
+            coin: p[2] ? parseInt(p[2].trim()) : 0,
+            gem: p[3] ? parseInt(p[3].trim()) : 0,
+            dice: p[4] ? parseInt(p[4].trim()) : 0
+        };
+    }).filter(x => x);
+}
 
 // [NEW] Parse Roulette CSV
 function parseRouletteCSV(csvText) {
@@ -72,7 +92,13 @@ function parseRouletteCSV(csvText) {
 }
 
 // --- WORKER INTEGRATION ---
-const worker = new Worker('worker.js');
+let worker;
+try {
+    worker = new Worker('worker.js');
+} catch (e) {
+    alert("⚠️ 無法載入本地 Worker 腳本 (CORS 安全性限制)。\n\n您目前似乎是直接雙擊開啟 HTML (file://)。請改用 Live Server 或將檔案放置於伺服器環境開啟，以正常執行遊戲！\n\n錯誤資訊：" + e.message);
+    throw e; // Stop execution
+}
 
 // Local View State (Synced from Worker)
 let state = {
@@ -172,15 +198,20 @@ worker.onmessage = function (e) {
 
         // [NEW] Roulette State Sync
         if (payload.roulette) {
-            const oldLevel = state.roulette ? state.roulette.level : 1;
-            state.roulette = payload.roulette; // Sync State
+            const isLevelUp = isSpinning && payload.roulette.lastSpinResult && payload.roulette.lastSpinResult.levelUp;
+
+            if (isLevelUp) {
+                // Defer the board reset until the animation finishes
+                state.pendingRouletteState = payload.roulette;
+                if (state.roulette) state.roulette.tokens = payload.roulette.tokens;
+            } else {
+                state.roulette = payload.roulette; // Sync State
+            }
 
             updateRouletteUI(); // Update Tokens/Level/Disabled items
 
             // Check if we need to animate a spin result
             if (payload.roulette.lastSpinResult) {
-                // If in AUTO mode, we might want faster animation or skip?
-                // User said "animation like board game". Let's animate.
                 animateRoulette(payload.roulette.lastSpinResult);
             }
         }
@@ -402,6 +433,7 @@ async function initGame() {
     let properties = [];
     collectionConfig = []; // [FIX] Use global
     rouletteConfig = {}; // [FIX] Use global
+    rouletteIntegralConfig = []; // [NEW] Use global
     // rouletteInterval is global and managed elsewhere, no need to init here except maybe clear?
     if (rouletteInterval) clearInterval(rouletteInterval);
     rouletteInterval = null;
@@ -465,8 +497,10 @@ async function initGame() {
                         // Array parsing
                         value = value.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
                         const nums = value.split(',').map(n => parseFloat(n.trim()));
-                        if (nums.length === 4) {
-                            if (type === 'UI_Px') systemConfig.UI_Px = nums;
+                        if (nums.length === 4 && type === 'UI_Px') {
+                            systemConfig.UI_Px = nums;
+                        } else if (type === 'Roulette_Time') {
+                            systemConfig.Roulette_Time = nums;
                         }
                     } else {
                         // Check if it's the UI Name (String)
@@ -480,6 +514,7 @@ async function initGame() {
                             if (type === 'Spin_CD') systemConfig.Spin_CD = val;
                             if (type === 'Collect_Item_Weight') systemConfig.Collect_Item_Weight = val;
                             if (type === 'Collect_Item_Value') systemConfig.Collect_Item_Value = val;
+                            if (type === 'Roulette_Token_Value') systemConfig.Roulette_Token_Value = val;
                         }
                     }
                 }
@@ -503,6 +538,13 @@ async function initGame() {
             rouletteConfig = parseRouletteCSV(text);
             console.log("Roulette Config Loaded:", rouletteConfig);
         }
+
+        const reqIntegral = await fetch('./lucky_loulette_integral.csv');
+        if (reqIntegral.ok) {
+            const textIntegral = await reqIntegral.text();
+            rouletteIntegralConfig = parseRouletteIntegralCSV(textIntegral);
+            console.log("Roulette Integral Config Loaded:", rouletteIntegralConfig);
+        }
     } catch (e) {
         console.warn("Roulette Config Load Failed", e);
     }
@@ -514,7 +556,8 @@ async function initGame() {
             properties: properties,
             collectionConfig: collectionConfig,
             systemConfig: systemConfig,
-            rouletteConfig: rouletteConfig // [NEW] Pass roulette config
+            rouletteConfig: rouletteConfig, // [NEW] Pass roulette config
+            rouletteIntegralConfig: rouletteIntegralConfig // [NEW] Pass roulette integral config
         }
     });
 
@@ -546,10 +589,10 @@ async function initGame() {
                         const p = l.split(',');
                         if (p.length >= 4) {
                             state.tournament.integralConfig.push({
-                                level: parseInt(p[0]),
-                                required: parseInt(p[1]),
-                                reward: parseInt(p[2]),
-                                desc: p[3]
+                                level: parseInt(p[0].trim()),
+                                required: parseInt(p[1].trim()),
+                                reward: parseInt(p[2].trim()),
+                                desc: p[3].trim()
                             });
                         }
                     });
@@ -698,7 +741,8 @@ function renderRoulette() {
         const radius = 130; // Radius from center
 
         const el = document.createElement('div');
-        el.className = `absolute w-12 h-12 -ml-6 -mt-6 rounded-lg border flex flex-col items-center justify-center text-[10px] shadow-lg transition-all transform duration-300`;
+        // Removed transition-all duration-300 to ensure instant border snapping
+        el.className = `absolute w-12 h-12 -ml-6 -mt-6 rounded-lg border-2 flex flex-col items-center justify-center text-[10px] shadow-lg transform`;
         el.style.left = '50%';
         el.style.top = '50%';
         el.style.transform = `rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)`;
@@ -707,20 +751,21 @@ function renderRoulette() {
         // Styling based on Type
         // Grand Prize (Level Up): Top (1) and Bottom (7) or explicitly marked?
         // CSV: level_up column.
+        // Icon
+        let icon = '❓';
+        if (item.coin) icon = '💰';
+        if (item.gem) icon = '💎';
+        if (item.dice) icon = '🎲';
+
+        // Value
+        let val = item.coin || item.gem || item.dice || '';
+
         if (item.levelUp) {
-            el.classList.add('bg-yellow-500', 'border-yellow-300', 'text-black', 'font-bold', 'z-10');
-            el.innerHTML = '⚡LEVEL<br>UP';
+            // Keep yellow background but slightly lighter/transparent, with standard icon/value layout
+            el.classList.add('bg-yellow-500/40', 'border-yellow-300', 'text-white', 'font-bold', 'z-10');
+            el.innerHTML = `<span class="text-sm">${icon}</span><span>${val}</span>`;
         } else {
             el.classList.add('bg-vibe-card', 'border-white/10', 'text-gray-300');
-            // Icon
-            let icon = '❓';
-            if (item.coin) icon = '💰';
-            if (item.gem) icon = '💎';
-            if (item.dice) icon = '🎲';
-
-            // Value
-            let val = item.coin || item.gem || item.dice || '';
-
             el.innerHTML = `<span class="text-sm">${icon}</span><span>${val}</span>`;
         }
 
@@ -735,16 +780,57 @@ function updateRouletteUI() {
     uiRouletteTokens.textContent = state.roulette.tokens;
     document.getElementById('roulette-token-display').textContent = state.roulette.tokens;
 
-    // Gray out drawn items
+    // Integral UI
+    renderRouletteIntegralUI();
+
+    // Handle drawn items and last landed item
     const drawn = state.roulette.drawnCounts || [];
+    // If spinning, the 'lastDrawn' item just arrived from worker, but animation hasn't finished.
+    // So we treat the actual 'settled' last item as the one before it, or current if not spinning.
+    const settledDrawnCount = isSpinning ? Math.max(0, drawn.length - 1) : drawn.length;
+    const settledDrawn = drawn.slice(0, settledDrawnCount);
+    const lastSettledItem = settledDrawn.length > 0 ? settledDrawn[settledDrawn.length - 1] : null;
+
+    // Update uiLastLandedCount for permanent highlight
+    if (!isSpinning && drawn.length > 0) {
+        uiLastLandedCount = drawn[drawn.length - 1];
+    } else if (drawn.length === 0) {
+        uiLastLandedCount = null; // Reset if no items drawn
+    }
+
     const items = document.querySelectorAll('[id^="roulette-item-"]');
     items.forEach(el => {
         const count = parseInt(el.id.replace('roulette-item-', ''));
-        if (drawn.includes(count)) {
-            el.classList.add('opacity-30', 'grayscale');
-            el.classList.remove('z-10', 'scale-110', 'border-neon-pink'); // Remove active effects
-        } else {
-            el.classList.remove('opacity-30', 'grayscale');
+
+        // Reset all specific visual states first
+        el.classList.remove('z-10', 'scale-110', 'bg-white/10');
+        el.style.borderColor = ''; // Reverts to native border-white/10 or border-yellow-300
+        el.style.boxShadow = ''; // Clears inline shadow
+
+        // Remove existing overlay and checkmark if any
+        const existingOverlay = el.querySelector('.roulette-overlay');
+        if (existingOverlay) existingOverlay.remove();
+        const existingCheck = el.querySelector('.roulette-check');
+        if (existingCheck) existingCheck.remove();
+
+        // 1. Permanent purple highlight for the last landed item (managed by UI state)
+        if (count === uiLastLandedCount) {
+            el.style.borderColor = '#a855f7'; // Tailwind purple-500
+            el.classList.add('z-10');
+        }
+
+        // 2. Gray out and Checkmark for all completely settled drawn items
+        if (settledDrawn.includes(count)) {
+            // Dark Overlay to simulate grayscale without affecting checkmark color
+            const overlay = document.createElement('div');
+            overlay.className = 'roulette-overlay absolute inset-0 bg-black/60 rounded-lg z-10';
+            el.appendChild(overlay);
+
+            // Add green checkmark
+            const check = document.createElement('div');
+            check.className = 'roulette-check absolute -top-2 -right-2 bg-neon-green text-black rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow-[0_0_10px_rgba(16,185,129,0.8)] z-20';
+            check.innerHTML = '✓';
+            el.appendChild(check);
         }
     });
 
@@ -755,6 +841,113 @@ function updateRouletteUI() {
     } else {
         btnRouletteSpin.disabled = false;
     }
+
+    // [NEW] Update Stats Panel
+    updateRouletteStatsUI();
+}
+
+function updateRouletteStatsUI() {
+    if (!state.roulette || !state.roulette.stats) return;
+    const stats = state.roulette.stats;
+
+    // 1. Cumulative Rewards
+    const elCoin = document.getElementById('stat-r-coin');
+    const elGem = document.getElementById('stat-r-gem');
+    const elDice = document.getElementById('stat-r-dice');
+    if (elCoin) elCoin.textContent = stats.totalCoin.toLocaleString();
+    if (elGem) elGem.textContent = stats.totalGem.toLocaleString();
+    if (elDice) elDice.textContent = stats.totalDice.toLocaleString();
+
+    // 2. Landing Probabilities
+    const elLandings = document.getElementById('stat-r-landings');
+    const elSpins = document.getElementById('stat-r-spins');
+    if (elLandings && elSpins) {
+        let totalSpins = 0;
+        Object.values(stats.landings).forEach(c => totalSpins += c);
+        elSpins.textContent = `Spins: ${Math.max(0, totalSpins)}`;
+
+        let html = '';
+        for (let i = 1; i <= 12; i++) {
+            const count = stats.landings[i] || 0;
+            const pct = totalSpins > 0 ? ((count / totalSpins) * 100).toFixed(1) : "0.0";
+            const color = count > 0 ? (count === Math.max(...Object.values(stats.landings)) ? 'text-yellow-400' : 'text-gray-300') : 'text-gray-600';
+
+            html += `
+                <div class="flex justify-between items-center ${color} py-0.5 border-b border-white/5 last:border-0 hover:bg-white/5">
+                    <span>Slot #${String(i).padStart(2, '0')}</span>
+                    <span class="flex gap-2 w-16 justify-end">
+                        <span class="font-bold">${count}</span>
+                        <span class="text-gray-500 w-8 text-right text-[10px] my-auto">${pct}%</span>
+                    </span>
+                </div>
+            `;
+        }
+        elLandings.innerHTML = html;
+    }
+
+    // 3. Tokens Per Level
+    const elTokens = document.getElementById('stat-r-tokens');
+    if (elTokens) {
+        let html = '';
+        const levels = Object.keys(stats.tokensPerLevel).map(Number).sort((a, b) => a - b);
+        for (const lvl of levels) {
+            html += `
+                <div class="flex justify-between items-center text-gray-300 py-0.5 border-b border-white/5 last:border-0 hover:bg-white/5">
+                    <span>Lv.${lvl}</span>
+                    <span class="text-yellow-500 font-bold">${stats.tokensPerLevel[lvl]} <span class="text-[9px] text-gray-500">tokens</span></span>
+                </div>
+            `;
+        }
+        if (html === '') html = '<div class="text-center text-gray-500 py-2 italic text-[10px]">No data yet</div>';
+        elTokens.innerHTML = html;
+    }
+}
+
+function renderRouletteIntegralUI() {
+    if (!state.roulette || !rouletteIntegralConfig || rouletteIntegralConfig.length === 0) return;
+
+    // Use Roulette's own integral config
+    const uiLevel = document.getElementById('roulette-integral-level');
+    const uiBar = document.getElementById('roulette-integral-bar');
+    const uiScore = document.getElementById('roulette-integral-score');
+    const uiTarget = document.getElementById('roulette-integral-target');
+    const uiDesc = document.getElementById('roulette-integral-desc');
+
+    if (!uiLevel || !uiBar) return;
+
+    // Default integral state if missing
+    if (!state.roulette.integral) {
+        state.roulette.integral = { score: 0, level: 1 };
+    }
+
+    const level = state.roulette.integral.level;
+    const score = state.roulette.integral.score;
+    const config = rouletteIntegralConfig.find(c => c.level === level);
+
+    if (config) {
+        let maxReq = config.required;
+        const progress = Math.min(100, (score / maxReq) * 100);
+
+        uiLevel.textContent = level;
+        uiBar.style.width = `${progress}%`;
+        uiScore.textContent = score;
+        uiTarget.textContent = maxReq;
+
+        let rewardText = [];
+        if (config.coin > 0) rewardText.push(`💰${config.coin}`);
+        if (config.gem > 0) rewardText.push(`💎${config.gem}`);
+        if (config.dice > 0) rewardText.push(`🎲${config.dice}`);
+
+        if (uiDesc) uiDesc.textContent = rewardText.length > 0 ? "下級金：" + rewardText.join(" ") : "無";
+
+    } else {
+        // Max Level reached
+        uiLevel.textContent = level;
+        uiBar.style.width = '100%';
+        uiScore.textContent = score;
+        uiTarget.textContent = "Max";
+        if (uiDesc) uiDesc.textContent = "已達最高等級";
+    }
 }
 
 let isSpinning = false;
@@ -763,6 +956,7 @@ function spinRoulette(isAuto = false) {
     if (isSpinning && !isAuto) return; // Wait for animation
     if (state.roulette.tokens < 1) return;
 
+    isSpinning = true; // Lock state immediately to prevent UI spoilers when worker responds
     worker.postMessage({ type: 'SPIN_ROULETTE' });
 }
 
@@ -792,59 +986,129 @@ function toggleAutoRoulette() {
 }
 
 function animateRoulette(targetItem) {
-    isSpinning = true;
     btnRouletteSpin.disabled = true;
 
     const targetCount = targetItem.count;
-    // Highlight items in circle
-    // 1 -> 2 -> ... -> 12 -> 1 ... -> Target
+    // Determine starting position (last landed item)
+    const drawn = state.roulette.drawnCounts || [];
+    // If we just pushed the targetCount, the PREVIOUS one is drawn[drawn.length-2]
+    let startCount = 1;
+    if (drawn.length > 1) {
+        startCount = drawn[drawn.length - 2];
+    } else if (drawn.length === 1 && targetCount !== drawn[0]) {
+        // If it's the first spin but the target isn't the only one (e.g., Level Up reset it?), wait, if length is 1, then the one we just drew is the ONLY one. So we start at 1.
+        // Actually, let's keep it simple. If it's a new board, start at 1 or random? User said "start from last stopped".
+        startCount = 1;
+    }
 
-    let current = 1;
-    let loops = 2; // Spin 2 times full?
-    let speed = 50;
+    // Fallback if startCount is somehow invalid
+    if (!startCount || startCount < 1 || startCount > 12) startCount = 1;
+
+    // Read Speed Multiplier
+    const speedSelect = document.getElementById('roulette-speed');
+    const speedMult = speedSelect ? parseFloat(speedSelect.value) || 1 : 1;
+
+    let current = startCount;
+    // Apply multiplier to base speeds
+    let baseSpeed = (state.systemConfig && state.systemConfig.Roulette_Speed) ? (state.systemConfig.Roulette_Speed * 1000) : 50;
+    baseSpeed = Math.floor(baseSpeed / speedMult);
+
+    // Choose random time from Roulette_Time array (in seconds)
+    let targetTimeMs = 2500; // Default 2.5s
+    if (state.systemConfig && state.systemConfig.Roulette_Time && state.systemConfig.Roulette_Time.length > 0) {
+        const times = state.systemConfig.Roulette_Time;
+        const randomTimeSec = times[Math.floor(Math.random() * times.length)];
+        targetTimeMs = randomTimeSec * 1000;
+    }
+    // Apply multiplier to target time
+    targetTimeMs = Math.floor(targetTimeMs / speedMult);
+
+    // Rough calculation of how many steps we can fit in targetTimeMs.
+    // We start at baseSpeed and decelerate at the end.
+    // For simplicity, let's estimate average speed = baseSpeed + 20ms
+    const avgSpeed = baseSpeed + 20;
+    let estimatedSteps = Math.floor(targetTimeMs / avgSpeed);
+
+    // Ensure it lands on the target
+    // current + steps = targetCount (mod 12)
+    // distance = (targetCount - current + 12) % 12
+    let distance = (targetCount - current + 12) % 12;
+    if (distance === 0) distance = 12; // At least one full loop if same (won't happen normally since we remove drawn)
+
+    // Calculate loops needed to get close to estimatedSteps
+    // steps = loops * 12 + distance
+    let loops = Math.max(1, Math.floor((estimatedSteps - distance) / 12));
+    const totalSteps = loops * 12 + distance;
+
+    let speed = baseSpeed;
     let step = 0;
-    const totalSteps = 12 * loops + (targetCount - 1); // Assuming starting from 1
 
     // Just a visual highlight
     const highlight = (count) => {
         const els = document.querySelectorAll('[id^="roulette-item-"]');
-        els.forEach(el => el.classList.remove('ring-2', 'ring-neon-pink', 'scale-110', 'bg-white/10'));
+        els.forEach(el => {
+            const elCount = parseInt(el.id.replace('roulette-item-', ''));
+            // Remove scanning states
+            el.classList.remove('scale-110', 'bg-white/10');
+            el.style.borderColor = ''; // Restore native border
+            el.style.boxShadow = '';
 
-        const el = document.getElementById(`roulette-item-${count}`);
-        if (el) {
-            el.classList.add('ring-2', 'ring-neon-pink', 'scale-110', 'bg-white/10');
-        }
+            // Apply scanning states to the current scan position ONLY
+            if (elCount === count) {
+                el.style.borderColor = '#a855f7'; // Purple tracking
+                el.style.boxShadow = '0 0 10px #a855f7'; // Extra glow
+                el.classList.add('scale-110', 'bg-white/10', 'z-20');
+            } else {
+                el.classList.remove('z-10', 'z-20');
+            }
+        });
     };
 
     const runStep = () => {
         highlight(current);
 
-        if (current === targetCount && step > 12 * loops) {
+        if (current === targetCount && step >= totalSteps) {
             // Done
             isSpinning = false;
+
+            uiLastLandedCount = targetCount;
             updateRouletteUI(); // Reveal/Audit state
 
             // Show Result Popup or Effect?
-            // Item flashes
+            // (Removed animate-bounce to prevent transform conflicts that cause the icon to jump to the center)
             const el = document.getElementById(`roulette-item-${targetCount}`);
             if (el) {
-                el.classList.add('animate-bounce');
-                setTimeout(() => el.classList.remove('animate-bounce'), 1000);
+                el.style.borderColor = '#a855f7'; // Ensure purple
+                el.style.boxShadow = '';
             }
 
-            // If Level Up, we might want to re-render board after a delay
+            // If Level Up, we defer the board reset so the player can see what they landed on
             if (targetItem.levelUp) {
+                const waitTime = Math.max(100, Math.floor(1500 / speedMult));
                 setTimeout(() => {
-                    renderRoulette(); // Re-render for new level (clears drawn state visual)
-                    updateRouletteUI();
-                }, 1000);
-            }
+                    if (state.pendingRouletteState) {
+                        state.roulette = state.pendingRouletteState;
+                        state.pendingRouletteState = null;
 
-            // Auto Chain
-            if (rouletteInterval && state.roulette.tokens > 0) {
-                setTimeout(() => spinRoulette(true), 500);
-            } else if (rouletteInterval && state.roulette.tokens < 1) {
-                toggleAutoRoulette(); // Stop
+                        renderRoulette(); // Re-render for new level (clears drawn state visual)
+                        updateRouletteUI();
+
+                        // Proceed to auto chain
+                        if (rouletteInterval && state.roulette.tokens > 0) {
+                            setTimeout(() => spinRoulette(true), Math.max(100, Math.floor(1000 / speedMult)));
+                        } else if (rouletteInterval && state.roulette.tokens < 1) {
+                            toggleAutoRoulette(); // Stop
+                        }
+                    }
+                }, waitTime); // Scale delay down before wiping the board to next level
+            } else {
+                // Auto Chain
+                if (rouletteInterval && state.roulette.tokens > 0) {
+                    const chainWait = Math.max(100, Math.floor(targetTimeMs * 0.2));
+                    setTimeout(() => spinRoulette(true), chainWait); // Delay before next spin based on spin time
+                } else if (rouletteInterval && state.roulette.tokens < 1) {
+                    toggleAutoRoulette(); // Stop
+                }
             }
 
             return;
@@ -854,8 +1118,8 @@ function animateRoulette(targetItem) {
         if (current > 12) current = 1;
         step++;
 
-        // Decelerate
-        if (step > 12 * loops - 5) speed += 30;
+        // Decelerate (last 5 steps)
+        if (step > totalSteps - 5) speed += 30;
 
         setTimeout(runStep, speed);
     };
@@ -1295,6 +1559,7 @@ console.log("Script Loaded Successfully");
 // --- Draggable Logic ---
 enableDraggable(document.getElementById('activity-panel'), document.getElementById('activity-drag-handle'));
 enableDraggable(document.getElementById('tournament-panel'), document.getElementById('tournament-panel'));
+enableDraggable(document.getElementById('roulette-side-panel'), document.getElementById('roulette-side-panel'));
 
 // --- Tournament Reset ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
@@ -1328,28 +1593,16 @@ function enableDraggable(el, handle) {
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
 
-    // Helper: Get robust local coordinates relative to offsetParent
-    function getLocalCoordinates() {
-        const rect = el.getBoundingClientRect();
-        const parent = el.offsetParent || document.body;
-        const parentRect = parent.getBoundingClientRect();
-
-        // Calculate position relative to parent's client area (border-box)
-        const computedStyle = window.getComputedStyle(parent);
-        const borderLeft = parseFloat(computedStyle.borderLeftWidth) || 0;
-        const borderTop = parseFloat(computedStyle.borderTopWidth) || 0;
-
-        return {
-            left: rect.left - parentRect.left - borderLeft,
-            top: rect.top - parentRect.top - borderTop
-        };
-    }
-
     function normalizePosition() {
-        const local = getLocalCoordinates();
-        el.style.right = 'auto'; // Release right constraint
-        el.style.left = local.left + 'px';
-        el.style.top = local.top + 'px';
+        if (getComputedStyle(el).position !== 'fixed') {
+            const rect = el.getBoundingClientRect();
+            el.style.position = 'fixed';
+            el.style.left = rect.left + 'px';
+            el.style.top = rect.top + 'px';
+            el.style.right = 'auto';
+            el.style.bottom = 'auto';
+            el.style.margin = '0';
+        }
     }
 
     handle.addEventListener('mousedown', (e) => {
@@ -1358,10 +1611,8 @@ function enableDraggable(el, handle) {
         // 1. Disable transition immediately to prevent jump
         el.style.transition = 'none';
 
-        // 2. Normalize if needed (switch from Right to Left positioning)
-        if (!el.style.left || el.style.right !== 'auto') {
-            normalizePosition();
-        }
+        // 2. Normalize to fixed positioning
+        normalizePosition();
 
         isDragging = true;
         startX = e.clientX;

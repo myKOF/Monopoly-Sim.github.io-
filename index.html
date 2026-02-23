@@ -213,7 +213,7 @@
             class="absolute top-[88px] right-[25rem] w-80 flex flex-col gap-4 pointer-events-auto z-30 transition-shadow duration-300">
             <!-- Collection Event Module -->
             <div id="activity-drag-handle"
-                class="bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-80 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -right-10 -top-10 w-32 h-32 bg-pink-500/20 blur-[50px] rounded-full group-hover:bg-pink-500/30 transition-all">
@@ -247,7 +247,7 @@
 
             <!-- Tournament Module -->
             <div id="tournament-panel"
-                class="bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-neon-blue/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-80 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-neon-blue/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -left-10 -bottom-10 w-32 h-32 bg-neon-blue/20 blur-[50px] rounded-full group-hover:bg-neon-blue/30 transition-all">
@@ -295,11 +295,38 @@
                     </div>
                 </div>
 
-                <!-- Ranking List -->
                 <div id="tournament-list"
                     class="flex flex-col gap-1 max-h-[200px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent relative z-10 snap-y snap-mandatory">
                     <!-- Items will be injected here -->
                     <div class="text-gray-500 text-xs text-center py-2">Loading...</div>
+                </div>
+            </div>
+
+            <!-- New Roulette Panel -->
+            <div id="roulette-side-panel"
+                class="w-80 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-orange-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                <!-- Glow Effect -->
+                <div
+                    class="absolute -left-10 -top-10 w-32 h-32 bg-orange-500/20 blur-[50px] rounded-full group-hover:bg-orange-500/30 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center relative z-10 mb-2">
+                    <h2 class="text-xs font-bold text-orange-400 uppercase tracking-widest flex items-center gap-2">
+                        <span class="text-lg">🎰</span>
+                        <div>
+                            <div>幸運輪盤</div>
+                            <div class="text-[9px] text-gray-400">Lucky Roulette</div>
+                        </div>
+                    </h2>
+                </div>
+
+                <div class="relative z-10">
+                    <button id="btn-roulette-open"
+                        class="w-full py-2 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black font-bold rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <span>開啟輪盤 (Open)</span>
+                        <span id="roulette-token-display"
+                            class="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-mono text-white">100</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -355,7 +382,7 @@
                         Lv.<span id="col-level">1</span>
                     </div>
                 </div>
-                <div class="p-4 flex-1 flex flex-col justify-center gap-4">
+                <div class="p-4 flex-1 flex flex-col justify-center gap-4 hidden">
                     <div class="flex justify-between items-end text-xs text-gray-400 font-mono">
                         <span>進度 (Progress)</span>
                         <span class="text-white"><span id="col-points"
@@ -367,13 +394,6 @@
                             class="h-full bg-gradient-to-r from-neon-purple to-pink-500 w-0 transition-all duration-500">
                         </div>
                     </div>
-                    <!-- Roulette Launch Button -->
-                    <button id="btn-roulette-open"
-                        class="mt-2 w-full py-2 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black font-bold rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
-                        <span>🎰 幸運輪盤 (Lucky Roulette)</span>
-                        <span id="roulette-token-display"
-                            class="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-mono text-white">100</span>
-                    </button>
                 </div>
             </div>
 
@@ -415,50 +435,125 @@
     <div id="roulette-modal"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
         <div
-            class="relative bg-vibe-dark border border-yellow-500/30 rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.2)] p-8 w-[500px] flex flex-col items-center">
+            class="relative bg-vibe-dark border border-yellow-500/30 rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.2)] p-8 w-[850px] flex gap-8 items-stretch">
             <!-- Close Button -->
             <button id="btn-roulette-close"
-                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-20">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                     </path>
                 </svg>
             </button>
 
-            <!-- Header -->
-            <h2 class="text-2xl font-bold text-yellow-400 tracking-wider mb-2 flex items-center gap-2">
-                <span>🎰 幸運輪盤</span>
-                <span id="roulette-level"
-                    class="text-sm bg-yellow-500/20 border border-yellow-500/40 px-2 py-0.5 rounded text-yellow-300">Lv.1</span>
-            </h2>
-            <div class="text-xs text-gray-400 mb-8 font-mono">消耗代幣抽取稀有獎勵！大獎可升級盤面。</div>
+            <!-- Left Side: Wheel -->
+            <div class="flex-1 flex flex-col items-center border-r border-white/10 pr-8">
+                <!-- Header -->
+                <h2 class="text-2xl font-bold text-yellow-400 tracking-wider mb-2 flex items-center gap-2">
+                    <span>🎰 幸運輪盤</span>
+                    <span id="roulette-level"
+                        class="text-sm bg-yellow-500/20 border border-yellow-500/40 px-2 py-0.5 rounded text-yellow-300">Lv.1</span>
+                </h2>
+                <div class="text-xs text-gray-400 mb-6 font-mono">消耗代幣抽取稀有獎勵！大獎可升級盤面。</div>
 
-            <!-- Wheel Container -->
-            <div class="relative w-[320px] h-[320px] mb-8">
-                <!-- Center Info -->
-                <div
-                    class="absolute inset-[35%] bg-vibe-dark rounded-full border border-white/10 flex flex-col items-center justify-center z-10 shadow-inner">
-                    <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">TOKENS</div>
-                    <div id="roulette-tokens" class="text-3xl font-bold text-white font-mono">100</div>
+                <!-- Integral Reward Progress -->
+                <div class="mb-8 w-full px-4 relative z-10 border border-white/10 p-3 rounded-xl bg-black/20">
+                    <div class="flex justify-between items-end mb-1">
+                        <div class="text-[10px] text-orange-400 font-bold tracking-wider">升級積分 (Integral)</div>
+                        <div class="text-[10px] text-gray-400 font-mono">Lv.<span id="roulette-integral-level"
+                                class="text-white font-bold">1</span></div>
+                    </div>
+                    <div
+                        class="w-full h-1.5 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative">
+                        <div id="roulette-integral-bar"
+                            class="h-full bg-gradient-to-r from-yellow-500 to-orange-500 w-0 transition-all duration-500 relative">
+                            <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center mt-1">
+                        <div class="text-[9px] text-gray-500 font-mono"><span id="roulette-integral-score">0</span> /
+                            <span id="roulette-integral-target">-</span>
+                        </div>
+                        <div id="roulette-integral-desc" class="text-[9px] text-yellow-500/80 truncate max-w-[200px]">
+                            Next:
+                            ???</div>
+                    </div>
                 </div>
 
-                <!-- Items Container (Rotated via JS) -->
-                <div id="roulette-wheel" class="absolute inset-0 rounded-full border border-white/5">
-                    <!-- Items injected via JS: 12 items -->
-                </div>
-            </div>
+                <!-- Wheel Container -->
+                <div class="relative w-[320px] h-[320px] mb-8">
+                    <!-- Center Info -->
+                    <div
+                        class="absolute inset-[35%] bg-vibe-dark rounded-full border border-white/10 flex flex-col items-center justify-center z-10 shadow-inner">
+                        <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">TOKENS</div>
+                        <div id="roulette-tokens" class="text-3xl font-bold text-white font-mono">100</div>
+                    </div>
 
-            <!-- Controls -->
-            <div class="flex gap-4 w-full">
-                <button id="btn-roulette-spin"
-                    class="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                    SPIN (1 Token)
-                </button>
-                <button id="btn-roulette-auto"
-                    class="flex-none px-6 py-3 border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 font-bold rounded-xl transition-all active:scale-95">
-                    AUTO
-                </button>
-            </div>
+                    <!-- Items Container (Rotated via JS) -->
+                    <div id="roulette-wheel" class="absolute inset-0 rounded-full border border-white/5">
+                        <!-- Items injected via JS: 12 items -->
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex gap-4 w-full">
+                    <button id="btn-roulette-spin"
+                        class="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        SPIN (1 Token)
+                    </button>
+                    <div class="relative w-24">
+                        <select id="roulette-speed"
+                            class="w-full h-full bg-vibe-dark text-yellow-500 font-bold px-2 rounded-xl border border-yellow-500/30 outline-none appearance-none cursor-pointer hover:bg-yellow-500/10 text-center transition-all">
+                            <option value="1">1x Speed</option>
+                            <option value="2">2x Speed</option>
+                            <option value="3">3x Speed</option>
+                            <option value="5">5x Speed</option>
+                            <option value="10">10x Speed</option>
+                        </select>
+                    </div>
+                    <button id="btn-roulette-auto"
+                        class="flex-none px-6 py-3 border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 font-bold rounded-xl transition-all active:scale-95">
+                        AUTO
+                    </button>
+                </div>
+            </div> <!-- End Left Side -->
+
+            <!-- Right Side: Stats Panel -->
+            <div class="w-[300px] flex flex-col text-white">
+                <h3 class="text-lg font-bold text-yellow-500 mb-4 flex items-center gap-2">
+                    <span>📊</span> 抽獎統計
+                </h3>
+
+                <!-- Cumulative Rewards -->
+                <div class="mb-4 bg-black/20 rounded-xl p-3 border border-white/5">
+                    <div class="text-[10px] text-gray-500 tracking-widest mb-2">CUMULATIVE REWARDS</div>
+                    <div class="grid grid-cols-2 gap-2 text-sm font-mono">
+                        <div class="flex justify-between"><span>💰</span><span id="stat-r-coin">0</span></div>
+                        <div class="flex justify-between"><span>💎</span><span id="stat-r-gem">0</span></div>
+                        <div class="flex justify-between"><span>🎲</span><span id="stat-r-dice">0</span></div>
+                    </div>
+                </div>
+
+                <!-- Landing Probabilities -->
+                <div class="mb-4 bg-black/20 rounded-xl p-3 border border-white/5 flex-1 min-h-[150px] flex flex-col">
+                    <div class="text-[10px] text-gray-500 tracking-widest mb-2 flex justify-between">
+                        <span>SLOT RESULTS</span>
+                        <span id="stat-r-spins">Spins: 0</span>
+                    </div>
+                    <div id="stat-r-landings"
+                        class="space-y-1 text-xs font-mono overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 flex-1">
+                        <!-- Injected by script -->
+                    </div>
+                </div>
+
+                <!-- Tokens Per Level -->
+                <div class="bg-black/20 rounded-xl p-3 border border-white/5 max-h-[120px] flex flex-col">
+                    <div class="text-[10px] text-gray-500 tracking-widest mb-2">TOKENS PER LEVEL</div>
+                    <div id="stat-r-tokens"
+                        class="space-y-1 text-xs font-mono overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
+                        <!-- Injected by script -->
+                    </div>
+                </div>
+            </div> <!-- End Right Side -->
         </div>
     </div>
 

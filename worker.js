@@ -22,7 +22,8 @@ let state = {
     dice: 1000,
     multiplier: 1,
     systemConfig: {},
-    roulette: { level: 1, drawnCounts: [], config: {} } // [NEW] Roulette State
+    roulette: { level: 1, drawnCounts: [], config: {}, integral: { score: 0, level: 1 } }, // [NEW] Roulette State
+    tournament: { integralConfig: [] }
 };
 
 // ... (Existing message handling) ...
@@ -109,7 +110,17 @@ self.onmessage = function (e) {
             state.collection.config = payload.collectionConfig;
             state.systemConfig = payload.systemConfig || {};
             state.roulette.config = payload.rouletteConfig || {}; // [NEW]
+            state.roulette.integralConfig = payload.rouletteIntegralConfig || []; // [NEW] Save integral config
             state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Initialize Tokens
+            state.roulette.integral = { score: 0, level: 1 };
+            state.roulette.stats = { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} }; // [NEW] Stats Tracking
+
+            // Note: worker doesn't receive tournament integralConfig yet. We should get it from script.js, 
+            // but for now we can let script.js handle the level-up logic if needed, OR we just increment score here.
+            // Wait, script.js handles airport integral level-up inside UPDATE_UI. 
+            // Let's increment the score here and let script.js process the level-up? No, script.js has the config. 
+            // Actually, script.js has the logic for airport. Let's just pass `integralPoints` event to main thread.
+            // Wait, the requirement says "add to worker.js" but I see script.js has the `integralConfig`.
             state.isRunning = false;
             // No sendUpdate here, as START_GAME will follow
             break;
@@ -131,6 +142,8 @@ self.onmessage = function (e) {
             state.roulette.level = 1; // Reset roulette level
             state.roulette.drawnCounts = []; // Reset drawn items
             state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Reset tokens
+            state.roulette.integral = { score: 0, level: 1 };
+            state.roulette.stats = { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} }; // [NEW] Stats Tracking
             sendUpdate();
             break;
 
@@ -178,6 +191,19 @@ self.onmessage = function (e) {
 
         case 'ADD_MONEY':
             addMoney(payload.amount, payload.reason || "BONUS", payload.desc || "Bonus");
+            sendUpdate();
+            break;
+
+        case 'ADD_RESOURCES':
+            if (payload.coin > 0) addMoney(payload.coin, payload.reason || "BONUS", payload.desc);
+            if (payload.gem > 0) {
+                state.gems += payload.gem;
+                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_GEM", delta_gold: 0, current_balance: state.money, detail: `大獎升級：寶石 ${payload.gem}` });
+            }
+            if (payload.dice > 0) {
+                state.dice += payload.dice;
+                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_DICE", delta_gold: 0, current_balance: state.money, detail: `大獎升級：骰子 ${payload.dice}` });
+            }
             sendUpdate();
             break;
 
@@ -591,7 +617,13 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             dice: state.dice, // Send back dice
             multiplier: state.multiplier, // Send back multiplier
             gems: state.gems, // [NEW] Send back gems
-            roulette: { level: state.roulette.level, drawnCounts: state.roulette.drawnCounts, tokens: state.roulette.tokens } // [NEW] Send back roulette state
+            roulette: {
+                level: state.roulette.level,
+                drawnCounts: state.roulette.drawnCounts,
+                tokens: state.roulette.tokens,
+                integral: state.roulette.integral, // Send integral state
+                stats: state.roulette.stats // Send stats 
+            }
         }
     });
 }
@@ -604,6 +636,35 @@ function spinRoulette() {
     }
 
     state.roulette.tokens--; // Deduct Token
+    // [NEW] Track Token Used per Level
+    state.roulette.stats.tokensPerLevel[state.roulette.level] = (state.roulette.stats.tokensPerLevel[state.roulette.level] || 0) + 1;
+
+    // Add Integral Points (configurable via Roulette_Token_Value)
+    const pointsGained = (state.systemConfig && state.systemConfig.Roulette_Token_Value) ? state.systemConfig.Roulette_Token_Value : 10;
+    state.roulette.integral.score += pointsGained;
+
+    // [NEW] Process Integral Level Up locally
+    if (state.roulette.integralConfig && state.roulette.integralConfig.length > 0) {
+        let currentCfg = state.roulette.integralConfig.find(c => c.level === state.roulette.integral.level);
+        while (currentCfg && state.roulette.integral.score >= currentCfg.required) {
+            // Level Up
+            state.roulette.integral.score -= currentCfg.required;
+            state.roulette.integral.level++;
+
+            // Give Rewards directly in worker state
+            if (currentCfg.coin > 0) addMoney(currentCfg.coin, "ROULETTE_INTEGRAL", `轉盤大獎升級 Lv.${state.roulette.integral.level - 1}`);
+            if (currentCfg.gem > 0) {
+                state.gems += currentCfg.gem;
+                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_GEM", delta_gold: 0, current_balance: state.money, detail: `大獎升級：寶石 ${currentCfg.gem}` });
+            }
+            if (currentCfg.dice > 0) {
+                state.dice += currentCfg.dice;
+                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_DICE", delta_gold: 0, current_balance: state.money, detail: `大獎升級：骰子 ${currentCfg.dice}` });
+            }
+
+            currentCfg = state.roulette.integralConfig.find(c => c.level === state.roulette.integral.level);
+        }
+    }
 
     const level = state.roulette.level;
     const maxLevel = Math.max(...Object.keys(state.roulette.config).map(Number));
@@ -649,6 +710,9 @@ function spinRoulette() {
 
     if (!selected) selected = available[available.length - 1]; // Fallback
 
+    // Track Landing Stat for Probability Display
+    state.roulette.stats.landings[selected.count] = (state.roulette.stats.landings[selected.count] || 0) + 1;
+
     // Process Reward
     // const mult = 1; // Roulette rewards fixed.
 
@@ -678,9 +742,11 @@ function spinRoulette() {
         // Grant Resources
         if (selected.coin > 0) {
             addMoney(selected.coin, "ROULETTE_COIN", `輪盤獎勵：金幣 ${selected.coin}`);
+            state.roulette.stats.totalCoin += selected.coin; // Track Coin
         }
         if (selected.gem > 0) {
             state.gems = Math.max(0, state.gems + selected.gem);
+            state.roulette.stats.totalGem += selected.gem; // Track Gem
             recordLog({
                 turn: state.turn,
                 position: state.position,
@@ -692,6 +758,7 @@ function spinRoulette() {
         }
         if (selected.dice > 0) {
             state.dice = Math.max(0, state.dice + selected.dice);
+            state.roulette.stats.totalDice += selected.dice; // Track Dice
             recordLog({
                 turn: state.turn,
                 position: state.position,
@@ -733,9 +800,10 @@ function sendRouletteUpdate(spinResultItem) {
                 level: state.roulette.level,
                 drawnCounts: state.roulette.drawnCounts,
                 tokens: state.roulette.tokens, // [NEW]
+                integral: state.roulette.integral, // [NEW] Integral state
+                stats: state.roulette.stats, // [NEW] Send stats immediately
                 lastSpinResult: spinResultItem // [NEW] Pass result for animation
             }
         }
     });
 }
-
