@@ -691,6 +691,21 @@ const uiRouletteWheel = document.getElementById('roulette-wheel');
 const btnRouletteSpin = document.getElementById('btn-roulette-spin');
 const btnRouletteAuto = document.getElementById('btn-roulette-auto');
 
+if (uiRouletteTokens) {
+    uiRouletteTokens.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 0) val = 0;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { rouletteTokens: val } });
+    });
+
+    uiRouletteTokens.addEventListener('change', (e) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 0) val = 0;
+        e.target.value = val;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { rouletteTokens: val } });
+    });
+}
+
 document.getElementById('btn-roulette-open').addEventListener('click', openRoulette);
 document.getElementById('btn-roulette-close').addEventListener('click', closeRoulette);
 btnRouletteSpin.addEventListener('click', () => spinRoulette(false));
@@ -777,8 +792,11 @@ function updateRouletteUI() {
     if (!state.roulette) return;
 
     uiRouletteLevel.textContent = `Lv.${state.roulette.level}`;
-    uiRouletteTokens.textContent = state.roulette.tokens;
-    document.getElementById('roulette-token-display').textContent = state.roulette.tokens;
+
+    // Only update the input value if we aren't currently typing in it, OR if it's spinning (force update)
+    if (document.activeElement !== uiRouletteTokens || isSpinning) {
+        uiRouletteTokens.value = state.roulette.tokens;
+    }
 
     // Integral UI
     renderRouletteIntegralUI();
@@ -1104,7 +1122,9 @@ function animateRoulette(targetItem) {
             } else {
                 // Auto Chain
                 if (rouletteInterval && state.roulette.tokens > 0) {
-                    const chainWait = Math.max(100, Math.floor(targetTimeMs * 0.2));
+                    // Limit the chain wait time drastically on higher speeds so it spins continuously
+                    const baseWait = Math.max(10, Math.floor(targetTimeMs * 0.2));
+                    const chainWait = Math.max(10, Math.floor(baseWait / speedMult));
                     setTimeout(() => spinRoulette(true), chainWait); // Delay before next spin based on spin time
                 } else if (rouletteInterval && state.roulette.tokens < 1) {
                     toggleAutoRoulette(); // Stop
@@ -1118,8 +1138,10 @@ function animateRoulette(targetItem) {
         if (current > 12) current = 1;
         step++;
 
-        // Decelerate (last 5 steps)
-        if (step > totalSteps - 5) speed += 30;
+        // Decelerate (last 5 steps) - Scaled by speed multiplier
+        if (step > totalSteps - 5) {
+            speed += Math.max(1, Math.floor(30 / speedMult));
+        }
 
         setTimeout(runStep, speed);
     };

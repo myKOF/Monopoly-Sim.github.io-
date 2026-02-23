@@ -150,6 +150,7 @@ self.onmessage = function (e) {
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
             if (payload.dice !== undefined) state.dice = payload.dice;
             if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
+            if (payload.rouletteTokens !== undefined) state.roulette.tokens = payload.rouletteTokens; // [NEW] Sync Roulette Tokens
             sendUpdate();
             break;
 

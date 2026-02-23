@@ -483,9 +483,11 @@
                 <div class="relative w-[320px] h-[320px] mb-8">
                     <!-- Center Info -->
                     <div
-                        class="absolute inset-[35%] bg-vibe-dark rounded-full border border-white/10 flex flex-col items-center justify-center z-10 shadow-inner">
+                        class="absolute inset-[35%] bg-vibe-dark rounded-full border border-white/10 flex flex-col items-center justify-center z-40 shadow-inner">
                         <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">TOKENS</div>
-                        <div id="roulette-tokens" class="text-3xl font-bold text-white font-mono">100</div>
+                        <input type="number" id="roulette-tokens"
+                            class="w-20 bg-transparent outline-none border-b border-white/20 hover:border-yellow-500/50 focus:border-yellow-500 text-center text-3xl font-bold text-white font-mono transition-colors pointer-events-auto"
+                            value="100" min="0" step="1">
                     </div>
 
                     <!-- Items Container (Rotated via JS) -->
@@ -508,6 +510,8 @@
                             <option value="3">3x Speed</option>
                             <option value="5">5x Speed</option>
                             <option value="10">10x Speed</option>
+                            <option value="50">50x Speed</option>
+                            <option value="100">100x Speed</option>
                         </select>
                     </div>
                     <button id="btn-roulette-auto"
