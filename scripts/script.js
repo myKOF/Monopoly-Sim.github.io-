@@ -100,6 +100,50 @@ try {
     throw e; // Stop execution
 }
 
+// --- BACKGROUND TIMER WORKER ---
+// Browsers throttle setTimeout to 1000ms in background tabs. This worker bypasses it.
+const timerWorkerCode = `
+    const timeouts = new Map();
+    self.onmessage = function(e) {
+        if (e.data.command === 'setTimeout') {
+            const id = e.data.id;
+            timeouts.set(id, setTimeout(() => {
+                self.postMessage({ id });
+                timeouts.delete(id);
+            }, e.data.time));
+        } else if (e.data.command === 'clearTimeout') {
+            clearTimeout(timeouts.get(e.data.id));
+            timeouts.delete(e.data.id);
+        }
+    };
+`;
+const timerBlob = new Blob([timerWorkerCode], { type: 'application/javascript' });
+const timerWorker = new Worker(URL.createObjectURL(timerBlob));
+
+let uiTimeoutId = 0;
+const uiTimeouts = new Map();
+
+timerWorker.onmessage = function (e) {
+    const id = e.data.id;
+    if (uiTimeouts.has(id)) {
+        const cb = uiTimeouts.get(id);
+        uiTimeouts.delete(id);
+        cb();
+    }
+};
+
+function reliableSetTimeout(cb, time) {
+    const id = ++uiTimeoutId;
+    uiTimeouts.set(id, cb);
+    timerWorker.postMessage({ command: 'setTimeout', id, time });
+    return id;
+}
+
+function reliableClearTimeout(id) {
+    uiTimeouts.delete(id);
+    timerWorker.postMessage({ command: 'clearTimeout', id });
+}
+
 // Local View State (Synced from Worker)
 let state = {
     turn: 0,
@@ -289,7 +333,7 @@ worker.onmessage = function (e) {
 
                 // [PING-PONG] If Auto Play, trigger next turn
                 if (isAutoRunning) {
-                    setTimeout(() => {
+                    reliableSetTimeout(() => {
                         worker.postMessage({ type: 'NEXT_TURN' });
                     }, systemConfig.Spin_CD * 1000);
                 }
@@ -358,6 +402,12 @@ function animateMove(startPos, steps, finalPos, onComplete) {
     const interval = systemConfig.Target_Speed * 1000;
 
     function step() {
+        if (document.hidden) {
+            updatePlayerPosition(finalPos);
+            if (onComplete) onComplete();
+            return;
+        }
+
         if (currentStep >= steps) {
             if (onComplete) onComplete();
             return;
@@ -368,10 +418,20 @@ function animateMove(startPos, steps, finalPos, onComplete) {
         updatePlayerPosition(nextPos);
         currentStep++;
 
-        setTimeout(() => requestAnimationFrame(step), interval);
+        reliableSetTimeout(() => {
+            if (document.hidden) {
+                step(); // Skip rAF completely if we became hidden
+            } else {
+                requestAnimationFrame(step);
+            }
+        }, interval);
     }
 
-    step();
+    if (document.hidden) {
+        step(); // Immediately finish if currently hidden
+    } else {
+        requestAnimationFrame(step);
+    }
 }
 
 let lastLogId = 0;
@@ -1079,6 +1139,11 @@ function animateRoulette(targetItem) {
     };
 
     const runStep = () => {
+        if (document.hidden) {
+            current = targetCount;
+            step = Math.max(step, totalSteps);
+        }
+
         highlight(current);
 
         if (current === targetCount && step >= totalSteps) {
@@ -1098,8 +1163,8 @@ function animateRoulette(targetItem) {
 
             // If Level Up, we defer the board reset so the player can see what they landed on
             if (targetItem.levelUp) {
-                const waitTime = Math.max(100, Math.floor(1500 / speedMult));
-                setTimeout(() => {
+                const waitTime = document.hidden ? 0 : Math.max(100, Math.floor(1500 / speedMult));
+                reliableSetTimeout(() => {
                     if (state.pendingRouletteState) {
                         state.roulette = state.pendingRouletteState;
                         state.pendingRouletteState = null;
@@ -1109,7 +1174,7 @@ function animateRoulette(targetItem) {
 
                         // Proceed to auto chain
                         if (rouletteInterval && state.roulette.tokens > 0) {
-                            setTimeout(() => spinRoulette(true), Math.max(100, Math.floor(1000 / speedMult)));
+                            reliableSetTimeout(() => spinRoulette(true), document.hidden ? 0 : Math.max(100, Math.floor(1000 / speedMult)));
                         } else if (rouletteInterval && state.roulette.tokens < 1) {
                             toggleAutoRoulette(); // Stop
                         }
@@ -1120,8 +1185,8 @@ function animateRoulette(targetItem) {
                 if (rouletteInterval && state.roulette.tokens > 0) {
                     // Limit the chain wait time drastically on higher speeds so it spins continuously
                     const baseWait = Math.max(10, Math.floor(targetTimeMs * 0.2));
-                    const chainWait = Math.max(10, Math.floor(baseWait / speedMult));
-                    setTimeout(() => spinRoulette(true), chainWait); // Delay before next spin based on spin time
+                    const chainWait = document.hidden ? 0 : Math.max(10, Math.floor(baseWait / speedMult));
+                    reliableSetTimeout(() => spinRoulette(true), chainWait); // Delay before next spin based on spin time
                 } else if (rouletteInterval && state.roulette.tokens < 1) {
                     toggleAutoRoulette(); // Stop
                 }
@@ -1139,10 +1204,20 @@ function animateRoulette(targetItem) {
             speed += Math.max(1, Math.floor(30 / speedMult));
         }
 
-        setTimeout(runStep, speed);
+        reliableSetTimeout(() => {
+            if (document.hidden) {
+                runStep(); // Skip rAF completely if we became hidden
+            } else {
+                requestAnimationFrame(runStep);
+            }
+        }, document.hidden ? 0 : speed);
     };
 
-    runStep();
+    if (document.hidden) {
+        runStep(); // Immediately finish if currently hidden
+    } else {
+        requestAnimationFrame(runStep);
+    }
 }
 
 
