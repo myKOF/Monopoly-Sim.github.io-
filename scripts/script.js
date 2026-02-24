@@ -177,6 +177,7 @@ const systemConfig = {
 // DOM Elements
 const ui = {
     board: document.getElementById('board-grid'),
+    boardDragHandle: document.getElementById('board-drag-handle'),
     money: document.getElementById('display-money'),
     turn: document.getElementById('display-turn'),
     gems: document.getElementById('display-gems'), // [NEW] Gem UI
@@ -1479,12 +1480,15 @@ function renderBoard() {
     // Since this is long, I will use the simplified version but ensure I don't break functionality
     try {
         const centerPanel = document.getElementById('center-panel');
+        const dragHandle = document.getElementById('board-drag-handle');
         ui.board.innerHTML = '';
+
+        if (dragHandle) ui.board.appendChild(dragHandle);
 
         if (centerPanel) {
             ui.board.appendChild(centerPanel);
         } else {
-            ui.board.innerHTML = '<div id="center-panel" class="absolute inset-[13%] flex items-center justify-center text-white bg-red-900/50 rounded-xl">Center Panel Lost</div>';
+            ui.board.innerHTML += '<div id="center-panel" class="absolute inset-[13%] flex items-center justify-center text-white bg-red-900/50 rounded-xl">Center Panel Lost</div>';
         }
 
         state.properties.forEach((tile, i) => {
@@ -2401,4 +2405,39 @@ if (ui.select2048Speed) {
             start2048Auto(); // Restart with new speed
         }
     });
+}
+
+// Board Dragging Logic
+let isBoardDragging = false;
+let boardOffsets = { x: 0, y: 0 };
+let boardStartPos = { x: 0, y: 0 };
+
+if (ui.boardDragHandle) {
+    ui.boardDragHandle.addEventListener('mousedown', (e) => {
+        isBoardDragging = true;
+        ui.board.style.transition = 'none';
+
+        boardStartPos = {
+            x: e.clientX - boardOffsets.x,
+            y: e.clientY - boardOffsets.y
+        };
+
+        document.addEventListener('mousemove', handleBoardDrag);
+        document.addEventListener('mouseup', stopBoardDrag);
+        e.preventDefault();
+    });
+}
+
+function handleBoardDrag(e) {
+    if (!isBoardDragging) return;
+    boardOffsets.x = e.clientX - boardStartPos.x;
+    boardOffsets.y = e.clientY - boardStartPos.y;
+    ui.board.style.transform = `translate(${boardOffsets.x}px, ${boardOffsets.y}px)`;
+}
+
+function stopBoardDrag() {
+    isBoardDragging = false;
+    ui.board.style.transition = '';
+    document.removeEventListener('mousemove', handleBoardDrag);
+    document.removeEventListener('mouseup', stopBoardDrag);
 }
