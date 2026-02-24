@@ -162,7 +162,8 @@ let state = {
     totalEarnedDice: 0,
     totalSpentDice: 0,
     earnedDiceBreakdown: {},
-    spentDiceBreakdown: {}
+    spentDiceBreakdown: {},
+    systemConfig: {} // [FIX] Initialize systemConfig in main thread state
 };
 
 const systemConfig = {
@@ -202,7 +203,31 @@ const ui = {
     autoProgress: document.getElementById('auto-progress'),
     btnFast: document.getElementById('btn-fast'),
     tourList: document.getElementById('tournament-list'),
-    btnResetStats: document.getElementById('btn-reset-stats')
+    btnResetStats: document.getElementById('btn-reset-stats'),
+
+    // [NEW] 2048 DOM Elements
+    btn2048Open: document.getElementById('btn-2048-open'),
+    modal2048: document.getElementById('2048-modal'),
+    btnClose2048: document.getElementById('btn-close-2048'),
+    grid2048: document.getElementById('grid-2048'),
+    disp2048Score: document.getElementById('disp-2048-score'),
+    disp2048Max: document.getElementById('disp-2048-max-level'),
+    disp2048NextRewards: document.getElementById('2048-next-rewards'),
+    btnRestart2048: document.getElementById('btn-restart-2048'),
+    overlay2048: document.getElementById('grid-2048-overlay'),
+    overlayTitle2048: document.getElementById('grid-overlay-title'),
+
+    btnStmRecover: document.getElementById('btn-stm-recover'),
+    stmCurrent: document.getElementById('stm-current'),
+    stmTime: document.getElementById('stm-time-remaining'),
+    stmBar: document.getElementById('stm-bar'),
+    stmMaxDisp: document.getElementById('stm-max-display'),
+
+    disp2048MSList: document.getElementById('2048-ms-list'),
+    disp2048MSCurrentScore: document.getElementById('ms-current-score'),
+
+    stmPreviewCurrent: document.getElementById('stm-preview-current'),
+    stmPreviewBar: document.getElementById('stm-preview-bar')
 };
 
 // Fallback Config
@@ -250,6 +275,16 @@ worker.onmessage = function (e) {
         if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
         if (payload.gems !== undefined) {
             state.gems = payload.gems;
+        }
+
+        // [NEW] 2048 State Sync
+        if (payload.game2048) {
+            state.game2048 = payload.game2048;
+            if (!ui.modal2048.classList.contains('hidden')) {
+                render2048();
+            } else {
+                update2048PreviewBar();
+            }
         }
 
         // [NEW] Roulette State Sync
@@ -584,11 +619,11 @@ async function initGame() {
                 }
             });
 
-            // Apply Config to UI
             const colTitle = document.getElementById('collection-title');
             if (colTitle) colTitle.textContent = systemConfig.Collect_UI_Name;
 
             console.log("System Config Loaded:", systemConfig);
+            state.systemConfig = systemConfig;
         }
     } catch (e) {
         console.warn("System Config Load Failed, using defaults", e);
@@ -613,7 +648,30 @@ async function initGame() {
         console.warn("Roulette Config Load Failed", e);
     }
 
-    // 4. Initialize Worker
+    // 4. Load 2048 Config (New)
+    let config2048 = [];
+    let config2048Integral = [];
+    try {
+        const res2048 = await fetch('./config/2048_activity.csv');
+        if (res2048.ok) {
+            const text = await res2048.text();
+            config2048 = parse2048CSV(text);
+            state.systemConfig.config2048 = config2048;
+            console.log("2048 Config Loaded:", config2048);
+        }
+
+        const resIntegral2048 = await fetch('./config/2048_activity_integral.csv');
+        if (resIntegral2048.ok) {
+            const text = await resIntegral2048.text();
+            config2048Integral = parse2048IntegralCSV(text);
+            state.systemConfig.config2048Integral = config2048Integral;
+            console.log("2048 Integral Config Loaded:", config2048Integral);
+        }
+    } catch (e) {
+        console.warn("2048 Config Load Failed", e);
+    }
+
+    // 5. Initialize Worker
     worker.postMessage({
         type: 'INIT_GAME',
         payload: {
@@ -621,7 +679,9 @@ async function initGame() {
             collectionConfig: collectionConfig,
             systemConfig: systemConfig,
             rouletteConfig: rouletteConfig, // [NEW] Pass roulette config
-            rouletteIntegralConfig: rouletteIntegralConfig // [NEW] Pass roulette integral config
+            rouletteIntegralConfig: rouletteIntegralConfig, // [NEW] Pass roulette integral config
+            config2048: config2048,
+            config2048Integral: config2048Integral
         }
     });
 
@@ -1317,6 +1377,38 @@ function parseCollectionCSV(text) {
     }).filter(x => x);
 }
 
+function parse2048CSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 5) return null;
+        // level,reward_gold,reward_gem,reward_dice,reward_desc
+        return {
+            level: parseInt(cols[0]),
+            coin: parseInt(cols[1]) || 0,
+            gem: parseInt(cols[2]) || 0,
+            dice: parseInt(cols[3]) || 0,
+            desc: cols[4] || ""
+        };
+    }).filter(x => x);
+}
+
+function parse2048IntegralCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 6) return null;
+        // level,required_points,reward_gold,reward_gem,reward_dice,reward_desc
+        return {
+            level: parseInt(cols[0]),
+            required: parseInt(cols[1]),
+            coin: parseInt(cols[2]) || 0,
+            gem: parseInt(cols[3]) || 0,
+            dice: parseInt(cols[4]) || 0,
+            desc: cols[5] || ""
+        };
+    }).filter(x => x);
+}
 function parseTournamentCSV(text) {
     const lines = text.trim().split('\n');
     const headers = lines[0].trim().split(','); // Assuming standard csv
@@ -1837,4 +1929,326 @@ function showDiceStatsModal() {
 
     document.getElementById('dice-stats-modal').classList.remove('hidden');
     document.getElementById('dice-stats-modal').classList.add('flex');
+}
+
+// ==========================================
+// 2048 UI Logic
+// ==========================================
+
+function update2048PreviewBar() {
+    if (!state.game2048) return;
+    const stm = state.game2048.stamina;
+    const maxStm = state.game2048.maxStamina || 100;
+    ui.stmPreviewCurrent.textContent = stm;
+    const pct = Math.min(100, (stm / maxStm) * 100);
+    ui.stmPreviewBar.style.width = `${pct}%`;
+}
+
+function render2048() {
+    if (!state.game2048) return;
+
+    const { grid, score, maxUnlockedLevel, stamina, nextStaminaTick, maxStamina, isGameOver } = state.game2048;
+
+    // Update Scores & Stamina
+    ui.disp2048Score.textContent = score;
+    ui.disp2048Max.textContent = maxUnlockedLevel;
+    ui.stmCurrent.textContent = stamina;
+    ui.stmMaxDisp.textContent = maxStamina || 100;
+
+    const pct = Math.min(100, (stamina / (maxStamina || 100)) * 100);
+    ui.stmBar.style.width = `${pct}%`;
+
+    // Handle Time Remaining (if any)
+    if (stamina >= (maxStamina || 100)) {
+        ui.stmTime.textContent = 'MAX';
+    } else if (nextStaminaTick) {
+        const remainingStr = Math.max(0, Math.ceil((nextStaminaTick - Date.now()) / 1000));
+        ui.stmTime.textContent = `${remainingStr}s`;
+    }
+
+    // Render Grid
+    ui.grid2048.innerHTML = '';
+
+    // We assume 4x4
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            // Draw background empty slots
+            const bgSlot = document.createElement('div');
+            bgSlot.className = "absolute rounded-md bg-[#cdc1b4]";
+            bgSlot.style.width = '23.5%';
+            bgSlot.style.height = '23.5%';
+            bgSlot.style.left = `${c * 25.5 + 2}%`;
+            bgSlot.style.top = `${r * 25.5 + 2}%`;
+            ui.grid2048.appendChild(bgSlot);
+
+            // Draw active tiles
+            const val = grid[r][c];
+            if (val > 0) {
+                const tile = document.createElement('div');
+
+                // Styling based on level using inline attributes for safety
+                let bgColor = "#eee4da";
+                let textColor = "#776e65";
+                let sizeClass = "text-4xl";
+                let shadow = "";
+
+                if (val >= 3) { bgColor = "#f2b179"; textColor = "white"; } // 8
+                if (val >= 4) { bgColor = "#f59563"; textColor = "white"; } // 16
+                if (val >= 5) { bgColor = "#f67c5f"; textColor = "white"; } // 32
+                if (val >= 6) { bgColor = "#f65e3b"; textColor = "white"; } // 64
+                if (val >= 7) { bgColor = "#edcf72"; textColor = "white"; sizeClass = "text-3xl"; shadow = "0 0 10px #edcf72"; } // 128
+                if (val >= 8) { bgColor = "#edcc61"; textColor = "white"; sizeClass = "text-3xl"; shadow = "0 0 15px #edcc61"; } // 256
+                if (val >= 9) { bgColor = "#edc850"; textColor = "white"; sizeClass = "text-3xl"; shadow = "0 0 20px #edc850"; } // 512
+                if (val >= 10) { bgColor = "#edc53f"; textColor = "white"; sizeClass = "text-2xl"; shadow = "0 0 25px #edc53f"; } // 1024
+                if (val >= 11) { bgColor = "#edc22e"; textColor = "white"; sizeClass = "text-2xl"; shadow = "0 0 30px #edc22e"; } // 2048
+
+                tile.className = `absolute flex items-center justify-center font-bold rounded-md transition-all duration-150 ${sizeClass}`;
+
+                // Position and size
+                tile.style.width = '23.5%';
+                tile.style.height = '23.5%';
+                tile.style.left = `${c * 25.5 + 2}%`;
+                tile.style.top = `${r * 25.5 + 2}%`;
+
+                // Colors
+                tile.style.backgroundColor = bgColor;
+                tile.style.color = textColor;
+                if (shadow) tile.style.boxShadow = shadow;
+
+                const displayNum = Math.pow(2, val);
+                tile.textContent = displayNum;
+
+                ui.grid2048.appendChild(tile);
+            }
+        }
+    }
+
+    // Render Next Merge Rewards
+    ui.disp2048NextRewards.innerHTML = '';
+    if (state.systemConfig && state.systemConfig.config2048) {
+        const firstMergeConfig = state.systemConfig.config2048;
+        // Show next 2 levels
+        const nextLvls = firstMergeConfig.filter(c => c.level > maxUnlockedLevel).slice(0, 2);
+
+        if (nextLvls.length === 0) {
+            ui.disp2048NextRewards.innerHTML = '<div class="text-xs text-gray-500 text-center py-2">所有首次合成獎勵已領取完畢！</div>';
+        } else {
+            nextLvls.forEach(c => {
+                const item = document.createElement('div');
+                item.className = "flex justify-between items-center bg-black/20 p-2 rounded border border-white/5";
+
+                let rewardsHtml = '';
+                if (c.coin) rewardsHtml += `<span class="text-yellow-400 mr-2">💰 ${c.coin}</span>`;
+                if (c.gem) rewardsHtml += `<span class="text-purple-400 mr-2">💎 ${c.gem}</span>`;
+                if (c.dice) rewardsHtml += `<span class="text-green-400">🎲 ${c.dice}</span>`;
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 rounded bg-[#f59563] text-white font-bold flex items-center justify-center text-[10px]">${Math.pow(2, c.level)}</div>
+                        <span class="text-xs text-gray-300">解鎖 Lv.${c.level}</span>
+                    </div>
+                    <div class="text-[10px] bg-black/50 px-2 py-1 rounded flex items-center shadow-inner">
+                        ${rewardsHtml || '無'}
+                    </div>
+                `;
+                ui.disp2048NextRewards.appendChild(item);
+            });
+        }
+    }
+
+    // Auto update milestones inside right panel
+    process2048Milestones();
+    // Handle Game Over Overlay
+    if (isGameOver) {
+        ui.overlay2048.classList.remove('opacity-0', 'pointer-events-none');
+        ui.overlay2048.classList.add('opacity-100', 'pointer-events-auto');
+    } else {
+        ui.overlay2048.classList.add('opacity-0', 'pointer-events-none');
+        ui.overlay2048.classList.remove('opacity-100', 'pointer-events-auto');
+    }
+}
+
+function process2048Milestones() {
+    if (!state.systemConfig || !state.systemConfig.config2048Integral || !state.game2048) return;
+
+    const msConfig = state.systemConfig.config2048Integral;
+    const currentScore = state.game2048.score;
+    const claimed = state.game2048.claimedMilestones || [];
+
+    ui.disp2048MSCurrentScore.textContent = currentScore;
+    ui.disp2048MSList.innerHTML = '';
+
+    msConfig.forEach((c, idx) => {
+        const item = document.createElement('div');
+        const isClaimed = claimed.includes(idx);
+        const canClaim = !isClaimed && currentScore >= c.required;
+        const progressPct = Math.min(100, (currentScore / c.required) * 100);
+
+        let borderClass = 'border-white/5';
+        let bgClass = 'bg-black/20';
+        let statusHtml = '';
+
+        if (isClaimed) {
+            borderClass = 'border-emerald-500/20';
+            bgClass = 'bg-emerald-900/10';
+            statusHtml = '<div class="text-xs text-emerald-500 font-bold px-2">已領取</div>';
+        } else if (canClaim) {
+            borderClass = 'border-emerald-400';
+            bgClass = 'bg-emerald-900/30';
+            item.classList.add('shadow-[0_0_10px_rgba(52,211,153,0.3)]');
+            statusHtml = '<div class="text-xs text-white bg-emerald-500 px-3 py-1 rounded shadow animate-pulse font-bold">可領取!</div>';
+        } else {
+            statusHtml = `<div class="text-[10px] text-gray-500 w-16 text-right">${currentScore} / ${c.required}</div>`;
+        }
+
+        let rewardsHtml = '';
+        if (c.coin) rewardsHtml += `<span class="text-yellow-400 mr-2">💰 ${c.coin}</span>`;
+        if (c.gem) rewardsHtml += `<span class="text-purple-400 mr-2">💎 ${c.gem}</span>`;
+        if (c.dice) rewardsHtml += `<span class="text-green-400">🎲 ${c.dice}</span>`;
+
+        item.className = `p-3 rounded-lg border ${borderClass} ${bgClass} relative overflow-hidden transition-colors`;
+        item.innerHTML = `
+            <!-- Progress bg -->
+            <div class="absolute left-0 top-0 bottom-0 bg-emerald-500/5 transition-all duration-500" style="width: ${progressPct}%"></div>
+            
+            <div class="relative z-10 flex justify-between items-center">
+                <div class="flex-1">
+                    <div class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
+                        <span>達標 ${c.required} 分</span>
+                        ${c.desc ? `<span class="text-[10px] font-normal text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded">${c.desc}</span>` : ''}
+                    </div>
+                    <div class="text-xs bg-black/40 inline-flex px-2 py-1 rounded shadow-inner">
+                        ${rewardsHtml || '無'}
+                    </div>
+                </div>
+                <div>${statusHtml}</div>
+            </div>
+        `;
+        ui.disp2048MSList.appendChild(item);
+    });
+}
+
+// 2048 Event Listeners
+if (ui.btn2048Open) {
+    ui.btn2048Open.addEventListener('click', () => {
+        ui.modal2048.classList.remove('hidden');
+        // brief timeout to allow display:block to apply before animating opacity
+        setTimeout(() => {
+            ui.modal2048.classList.remove('opacity-0');
+        }, 10);
+        render2048();
+
+        // Setup Keyboard and Swipe Listeners
+        document.addEventListener('keydown', handle2048Input);
+        document.addEventListener('touchstart', handle2048TouchStart, { passive: false });
+        document.addEventListener('touchend', handle2048TouchEnd, { passive: false });
+        // Mouse drag support
+        ui.grid2048.addEventListener('mousedown', handle2048MouseStart);
+    });
+}
+
+if (ui.btnClose2048) {
+    ui.btnClose2048.addEventListener('click', () => {
+        ui.modal2048.classList.add('opacity-0');
+        setTimeout(() => {
+            ui.modal2048.classList.add('hidden');
+        }, 300);
+
+        document.removeEventListener('keydown', handle2048Input);
+        document.removeEventListener('touchstart', handle2048TouchStart);
+        document.removeEventListener('touchend', handle2048TouchEnd);
+        ui.grid2048.removeEventListener('mousedown', handle2048MouseStart);
+    });
+}
+
+if (ui.btnRestart2048) {
+    ui.btnRestart2048.addEventListener('click', () => {
+        worker.postMessage({ type: 'MOVE_2048', payload: { action: 'RESTART' } });
+    });
+}
+
+if (ui.btnStmRecover) {
+    ui.btnStmRecover.addEventListener('click', () => {
+        worker.postMessage({ type: 'MOVE_2048', payload: { action: 'USE_STAMINA_ITEM' } });
+    });
+}
+
+function handle2048Input(e) {
+    // Only handle if modal is open
+    if (ui.modal2048.classList.contains('hidden')) return;
+
+    const keyMap = {
+        'ArrowUp': 'UP',
+        'ArrowDown': 'DOWN',
+        'ArrowLeft': 'LEFT',
+        'ArrowRight': 'RIGHT',
+        'w': 'UP',
+        's': 'DOWN',
+        'a': 'LEFT',
+        'd': 'RIGHT',
+        'W': 'UP',
+        'S': 'DOWN',
+        'A': 'LEFT',
+        'D': 'RIGHT'
+    };
+
+    const direction = keyMap[e.key];
+    if (direction) {
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+            e.preventDefault(); // prevent scrolling
+        }
+        worker.postMessage({ type: 'MOVE_2048', payload: { action: 'MOVE', direction } });
+    }
+}
+
+// --- Swipe Logic ---
+let touchStartX = 0;
+let touchStartY = 0;
+
+function handle2048TouchStart(e) {
+    if (ui.modal2048.classList.contains('hidden')) return;
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+}
+
+function handle2048TouchEnd(e) {
+    if (ui.modal2048.classList.contains('hidden')) return;
+    const touchEndX = e.changedTouches[0].screenX;
+    const touchEndY = e.changedTouches[0].screenY;
+    handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+}
+
+function handle2048MouseStart(e) {
+    if (ui.modal2048.classList.contains('hidden')) return;
+    e.preventDefault();
+    touchStartX = e.clientX;
+    touchStartY = e.clientY;
+    document.addEventListener('mouseup', handle2048MouseEnd);
+}
+
+function handle2048MouseEnd(e) {
+    document.removeEventListener('mouseup', handle2048MouseEnd);
+    if (ui.modal2048.classList.contains('hidden')) return;
+    const touchEndX = e.clientX;
+    const touchEndY = e.clientY;
+    handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+}
+
+function handleSwipe(startX, startY, endX, endY) {
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    if (Math.max(absDx, absDy) > 30) { // Minimum swipe distance
+        let direction = null;
+        if (absDx > absDy) {
+            direction = dx > 0 ? 'RIGHT' : 'LEFT';
+        } else {
+            direction = dy > 0 ? 'DOWN' : 'UP';
+        }
+        if (direction) {
+            worker.postMessage({ type: 'MOVE_2048', payload: { action: 'MOVE', direction } });
+        }
+    }
 }

@@ -26,8 +26,9 @@ let state = {
     spentDiceBreakdown: {}, // [NEW] Track sources of spent dice { 'source': amount }
     multiplier: 1,
     systemConfig: {},
-    roulette: { level: 1, drawnCounts: [], config: {}, integral: { score: 0, level: 1 } }, // [NEW] Roulette State
-    tournament: { integralConfig: [] }
+    roulette: { level: 1, drawnCounts: [], config: {}, integral: { score: 0, level: 1 }, stats: { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} } },
+    tournament: { integralConfig: [] },
+    game2048: null // Initialize properly in START_GAME or INIT
 };
 
 // ... (Existing message handling) ...
@@ -115,19 +116,16 @@ self.onmessage = function (e) {
             state.properties = payload.properties;
             state.collection.config = payload.collectionConfig;
             state.systemConfig = payload.systemConfig || {};
+            state.systemConfig.config2048 = payload.config2048 || [];
+            state.systemConfig.config2048Integral = payload.config2048Integral || [];
             state.roulette.config = payload.rouletteConfig || {}; // [NEW]
             state.roulette.integralConfig = payload.rouletteIntegralConfig || []; // [NEW] Save integral config
             state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Initialize Tokens
             state.roulette.integral = { score: 0, level: 1 };
             state.roulette.stats = { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} }; // [NEW] Stats Tracking
 
-            // Note: worker doesn't receive tournament integralConfig yet. We should get it from script.js, 
-            // but for now we can let script.js handle the level-up logic if needed, OR we just increment score here.
-            // Wait, script.js handles airport integral level-up inside UPDATE_UI. 
-            // Let's increment the score here and let script.js process the level-up? No, script.js has the config. 
-            // Actually, script.js has the logic for airport. Let's just pass `integralPoints` event to main thread.
-            // Wait, the requirement says "add to worker.js" but I see script.js has the `integralConfig`.
             state.isRunning = false;
+            init2048State();
             // No sendUpdate here, as START_GAME will follow
             break;
 
@@ -154,6 +152,10 @@ self.onmessage = function (e) {
             state.roulette.tokens = (state.systemConfig.Roulette_Token_Initial) ? state.systemConfig.Roulette_Token_Initial : 100; // Reset tokens
             state.roulette.integral = { score: 0, level: 1 };
             state.roulette.stats = { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} }; // [NEW] Stats Tracking
+
+            // [NEW] 2048 Initialization
+            init2048State();
+
             sendUpdate();
             break;
 
@@ -286,9 +288,247 @@ self.onmessage = function (e) {
                     }
                 }
             });
+        case 'MOVE_2048':
+            handle2048Event(payload);
             break;
     }
 };
+
+// ==========================================
+// 2048 Logic Helpers
+// ==========================================
+
+function get2048ConfigValue(typeName, fallback) {
+    if (!state.systemConfig || !state.systemConfig.raw) return fallback;
+    const item = state.systemConfig.raw.find(row => row.type === typeName);
+    return item ? parseFloat(item.value) : fallback;
+}
+
+function init2048State() {
+    state.game2048 = {
+        grid: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+        score: 0,
+        stamina: 100, // Starting Stamina
+        maxStamina: 100,
+        nextStaminaTick: 0,
+        maxUnlockedLevel: 1,
+        claimedMilestones: [],
+        isGameOver: false
+    };
+    // Spawn 2 initial tiles
+    spawn2048Tile();
+    spawn2048Tile();
+}
+
+function spawn2048Tile() {
+    const empty = [];
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            if (state.game2048.grid[r][c] === 0) empty.push({ r, c });
+        }
+    }
+    if (empty.length > 0) {
+        const spot = empty[Math.floor(Math.random() * empty.length)];
+        // 90% chance for level 1 (value 2), 10% for level 2 (value 4) 
+        state.game2048.grid[spot.r][spot.c] = Math.random() < 0.9 ? 1 : 2;
+        update2048MaxLevel(state.game2048.grid[spot.r][spot.c]);
+    }
+}
+
+function update2048MaxLevel(level) {
+    if (level > state.game2048.maxUnlockedLevel) {
+        state.game2048.maxUnlockedLevel = level;
+
+        // Only trigger rewards for Level 2 and above
+        if (level >= 2 && state.systemConfig && state.systemConfig.config2048) {
+            const rewardRow = state.systemConfig.config2048.find(r => r.level === level);
+            if (rewardRow) {
+                if (rewardRow.coin) addMoney(rewardRow.coin, 'EVENT_REWARD', `2048 合成 Lv.${level} 獎勵`);
+                if (rewardRow.gem) {
+                    state.gems += rewardRow.gem;
+                    recordLog({
+                        turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
+                        current_balance: state.money, detail: `2048 Lv.${level} 獎勵：寶石 ${rewardRow.gem}`
+                    });
+                }
+                if (rewardRow.dice) {
+                    state.dice += rewardRow.dice;
+                    state.totalEarnedDice += rewardRow.dice;
+                    state.earnedDiceBreakdown['2048首次合成'] = (state.earnedDiceBreakdown['2048首次合成'] || 0) + rewardRow.dice;
+                    recordLog({
+                        turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
+                        current_balance: state.money, detail: `2048 Lv.${level} 獎勵：骰子 ${rewardRow.dice}`
+                    });
+                }
+                recordLog({
+                    turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: rewardRow.coin || 0,
+                    current_balance: state.money, detail: `解鎖 2048 Lv.${level} (${rewardRow.desc})`
+                });
+            }
+        }
+    }
+}
+
+function check2048Milestones() {
+    if (!state.systemConfig || !state.systemConfig.config2048Integral) return;
+    const config = state.systemConfig.config2048Integral;
+    const score = state.game2048.score;
+
+    config.forEach((row, idx) => {
+        if (score >= row.required && !state.game2048.claimedMilestones.includes(idx)) {
+            state.game2048.claimedMilestones.push(idx);
+            if (row.coin) addMoney(row.coin, 'EVENT_REWARD', `2048 積分獎勵 (${row.required}分)`);
+            if (row.gem) {
+                state.gems += row.gem;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
+                    current_balance: state.money, detail: `2048 積分獎勵：寶石 ${row.gem}`
+                });
+            }
+            if (row.dice) {
+                state.dice += row.dice;
+                state.totalEarnedDice += row.dice;
+                state.earnedDiceBreakdown['2048積分達標'] = (state.earnedDiceBreakdown['2048積分達標'] || 0) + row.dice;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
+                    current_balance: state.money, detail: `2048 積分獎勵：骰子 ${row.dice}`
+                });
+            }
+            recordLog({
+                turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: row.coin || 0,
+                current_balance: state.money, detail: `達成 2048 積分 ${row.required} (${row.desc})`
+            });
+        }
+    });
+}
+
+function check2048GameOver() {
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            if (state.game2048.grid[r][c] === 0) return false;
+        }
+    }
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            const val = state.game2048.grid[r][c];
+            if (c < 3 && state.game2048.grid[r][c + 1] === val) return false;
+            if (r < 3 && state.game2048.grid[r + 1][c] === val) return false;
+        }
+    }
+    return true;
+}
+
+function handle2048Event(payload) {
+    if (!state.game2048) init2048State();
+
+    if (payload.action === 'RESTART') {
+        init2048State();
+        sendUpdate();
+        return;
+    }
+
+    if (payload.action === 'USE_STAMINA_ITEM') {
+        const itemRecovery = get2048ConfigValue('2048_Activity_ItemRecoverPoint', 20);
+        state.game2048.stamina += itemRecovery;
+        recordLog({
+            turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: 0, current_balance: state.money,
+            detail: `使用 2048 體力道具，回復 ${itemRecovery} 體力`
+        });
+        sendUpdate();
+        return;
+    }
+
+    if (payload.action === 'MOVE') {
+        if (state.game2048.isGameOver || state.game2048.stamina < 1) return;
+
+        let moved = false;
+        const grid = state.game2048.grid;
+        const dir = payload.direction;
+
+        const slideAndMerge = (line) => {
+            let filtered = line.filter(val => val !== 0);
+            let newLine = [];
+            let changed = false;
+
+            for (let i = 0; i < filtered.length; i++) {
+                // Max level is 11, so prevent merging two 11s.
+                if (i + 1 < filtered.length && filtered[i] === filtered[i + 1] && filtered[i] < 11) {
+                    const newLevel = filtered[i] + 1;
+                    newLine.push(newLevel);
+                    state.game2048.score += Math.pow(2, newLevel);
+                    update2048MaxLevel(newLevel);
+                    i++;
+                    changed = true;
+                } else {
+                    newLine.push(filtered[i]);
+                }
+            }
+
+            while (newLine.length < 4) { newLine.push(0); }
+            if (!changed) {
+                for (let i = 0; i < 4; i++) { if (line[i] !== newLine[i]) changed = true; }
+            }
+            return { newLine, changed };
+        };
+
+        if (dir === 'LEFT' || dir === 'RIGHT') {
+            for (let r = 0; r < 4; r++) {
+                let row = grid[r].slice();
+                if (dir === 'RIGHT') row.reverse();
+                const res = slideAndMerge(row);
+                if (res.changed) moved = true;
+                let newRow = res.newLine;
+                if (dir === 'RIGHT') newRow.reverse();
+                grid[r] = newRow;
+            }
+        } else if (dir === 'UP' || dir === 'DOWN') {
+            for (let c = 0; c < 4; c++) {
+                let col = [grid[0][c], grid[1][c], grid[2][c], grid[3][c]];
+                if (dir === 'DOWN') col.reverse();
+                const res = slideAndMerge(col);
+                if (res.changed) moved = true;
+                let newCol = res.newLine;
+                if (dir === 'DOWN') newCol.reverse();
+                for (let r = 0; r < 4; r++) grid[r][c] = newCol[r];
+            }
+        }
+
+        if (moved) {
+            state.game2048.stamina -= 1;
+            spawn2048Tile();
+            check2048Milestones();
+            if (check2048GameOver()) state.game2048.isGameOver = true;
+            sendUpdate();
+        }
+    }
+}
+
+function tick2048Stamina() {
+    if (!state.game2048) return;
+    if (state.game2048.stamina >= state.game2048.maxStamina) {
+        state.game2048.nextStaminaTick = 0;
+        return;
+    }
+
+    const now = Date.now();
+    const recoverTimeSecs = get2048ConfigValue('2048_Activity_RecoverTime', 300);
+    const recoverPts = get2048ConfigValue('2048_Activity_RecoverPoint', 1);
+
+    if (state.game2048.nextStaminaTick === 0) {
+        state.game2048.nextStaminaTick = now + (recoverTimeSecs * 1000);
+    } else if (now >= state.game2048.nextStaminaTick) {
+        state.game2048.stamina = Math.min(state.game2048.maxStamina, state.game2048.stamina + recoverPts);
+        state.game2048.nextStaminaTick = state.game2048.stamina >= state.game2048.maxStamina ? 0 : now + (recoverTimeSecs * 1000);
+        sendUpdate();
+    }
+}
+
+// Tick stamina periodically 
+setInterval(() => {
+    tick2048Stamina();
+}, 1000);
+
+
 
 // --- Core Logic ---
 
@@ -714,7 +954,8 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             integral: state.roulette.integral, // Send integral state
             stats: state.roulette.stats // Send stats 
         },
-        tournamentBonus: state.pendingTournamentBonus || 0 // [NEW] Pass tournament points
+        tournamentBonus: state.pendingTournamentBonus || 0, // [NEW] Pass tournament points
+        game2048: state.game2048
     };
 
     // Reset pending bonus after sending

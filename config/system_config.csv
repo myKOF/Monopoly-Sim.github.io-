@@ -4,9 +4,12 @@
 3,UI_Px,"{10,10,5,5}",UI邊距 上下左右(未實裝功能)
 4,Collect_UI_Name,圖標搜集,蒐集活動UI顯示名稱
 5,AIRPORT_Value,50,抵達機場時增加的積分
-6,Collect_Item_Weight,2000,圖標物件生成權重
+6,Collect_Item_Weight,500,圖標物件踩中權重
 7,Collect_Item_Value,3,圖標物件積分
 8,Roulette_Token_Initial,100,輪盤初始代幣數量
 9,Roulette_Speed,0.1,輪盤基礎旋轉速度(秒)
 10,Roulette_Time,"{1.8,4}",輪盤旋轉最少與最多時間區間
 11,Roulette_Token_Value,1,輪盤每次獲得之積分
+12,2048_Activity_RecoverPoint,1,2048自然恢復體力值
+13,2048_Activity_RecoverTime,2.5,2048自然恢復體力時間間隔(秒)
+13,2048_Activity_ItemRecoverPoint,20,2048道具恢復體力值
