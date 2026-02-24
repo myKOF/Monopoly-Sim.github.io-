@@ -158,7 +158,11 @@ let state = {
         participants: [], // {id, name, score, target, valueRange:[], cdRange:[], nextUpdate: 0}
         playerScore: 0,
         playerRank: 0
-    }
+    },
+    totalEarnedDice: 0,
+    totalSpentDice: 0,
+    earnedDiceBreakdown: {},
+    spentDiceBreakdown: {}
 };
 
 const systemConfig = {
@@ -174,6 +178,9 @@ const ui = {
     board: document.getElementById('board-grid'),
     money: document.getElementById('display-money'),
     turn: document.getElementById('display-turn'),
+    gems: document.getElementById('display-gems'), // [NEW] Gem UI
+    earnedDice: document.getElementById('display-earned-dice'), // [NEW] Total Earned Dice
+    spentDice: document.getElementById('display-spent-dice'), // [NEW] Total Spent Dice
     diceVisual: document.getElementById('dice-visual'),
     btnRoll: document.getElementById('btn-roll'),
     btnAuto: document.getElementById('btn-auto'),
@@ -188,6 +195,7 @@ const ui = {
     colPoints: document.getElementById('collection-points'),
     colTarget: document.getElementById('collection-target'),
     colBar: document.getElementById('collection-bar'),
+    colReward: document.getElementById('collection-reward-desc'),
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
     btnStop: document.getElementById('btn-stop'),
@@ -235,6 +243,10 @@ worker.onmessage = function (e) {
         state.extraObjects = new Set(payload.extraObjects);
         state.collection = payload.collection;
         if (payload.dice !== undefined) state.dice = payload.dice;
+        if (payload.totalEarnedDice !== undefined) state.totalEarnedDice = payload.totalEarnedDice;
+        if (payload.totalSpentDice !== undefined) state.totalSpentDice = payload.totalSpentDice;
+        if (payload.earnedDiceBreakdown !== undefined) state.earnedDiceBreakdown = payload.earnedDiceBreakdown;
+        if (payload.spentDiceBreakdown !== undefined) state.spentDiceBreakdown = payload.spentDiceBreakdown;
         if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
         if (payload.gems !== undefined) {
             state.gems = payload.gems;
@@ -287,15 +299,27 @@ worker.onmessage = function (e) {
                     state.tournament.integral.score -= currentCfg.required;
                     state.tournament.integral.level++;
 
-                    const reward = currentCfg.reward;
-                    worker.postMessage({
-                        type: 'ADD_MONEY',
-                        payload: {
-                            amount: reward,
-                            reason: "TOURNAMENT_INTEGRAL",
-                            desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`
-                        }
-                    });
+                    const reward = currentCfg.reward || 0;
+                    const gemReward = currentCfg.gem || 0;
+                    const diceReward = currentCfg.dice || 0;
+
+                    if (reward > 0 || gemReward > 0 || diceReward > 0) {
+                        worker.postMessage({
+                            type: 'ADD_RESOURCES',
+                            payload: {
+                                coin: reward,
+                                gem: gemReward,
+                                dice: diceReward,
+                                reason: "TOURNAMENT_INTEGRAL",
+                                desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`,
+                                gemEvent: "TOURNAMENT_GEM",
+                                gemDesc: `錦標賽積分升級寶石：${gemReward}`,
+                                diceEvent: "TOURNAMENT_DICE",
+                                diceDesc: `錦標賽積分升級骰子：${diceReward}`,
+                                eventSourceName: '錦標賽積分獎勵'
+                            }
+                        });
+                    }
                     currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
                 }
             }
@@ -627,12 +651,14 @@ async function initGame() {
                     const lines = txt.split(/\r?\n/).slice(1);
                     lines.forEach(l => {
                         const p = l.split(',');
-                        if (p.length >= 4) {
+                        if (p.length >= 6) {
                             state.tournament.integralConfig.push({
                                 level: parseInt(p[0].trim()),
                                 required: parseInt(p[1].trim()),
-                                reward: parseInt(p[2].trim()),
-                                desc: p[3].trim()
+                                reward: parseInt(p[2].trim()) || 0,
+                                gem: parseInt(p[3].trim()) || 0,
+                                dice: parseInt(p[4].trim()) || 0,
+                                desc: p[5].trim()
                             });
                         }
                     });
@@ -657,6 +683,11 @@ async function initGame() {
 // --- Event Listeners (Delegate to Worker) ---
 
 ui.btnRoll.addEventListener('click', () => {
+    if (isAutoRunning) {
+        // [FIX] Stop Auto if clicked during auto-play
+        ui.btnStop.click();
+        return;
+    }
     if (isAnimating) return; // [FIX] Prevent re-entry
     worker.postMessage({ type: 'EXEC_TURN' });
 });
@@ -705,6 +736,22 @@ if (ui.btnResetStats) {
             worker.postMessage({ type: 'RESET_STATS' });
             state.tileVisits = []; // Optimistic clear
             updateStatsUI();
+        }
+    });
+}
+
+const btnResetDiceStats = document.getElementById('btn-reset-dice-stats');
+if (btnResetDiceStats) {
+    btnResetDiceStats.addEventListener('click', () => {
+        if (confirm("確定要重置骰子統計嗎？ (Reset Dice Stats?)")) {
+            worker.postMessage({ type: 'RESET_DICE_STATS' });
+            // Optimistic reset
+            state.totalEarnedDice = 0;
+            state.totalSpentDice = 0;
+            state.earnedDiceBreakdown = {};
+            state.spentDiceBreakdown = {};
+            if (ui.earnedDice) ui.earnedDice.textContent = "0";
+            if (ui.spentDice) ui.spentDice.textContent = "0";
         }
     });
 }
@@ -1257,12 +1304,14 @@ function parseCollectionCSV(text) {
     const lines = text.trim().split('\n');
     return lines.slice(1).map(line => {
         const cols = line.trim().split(',');
-        if (cols.length < 4) return null;
-        const [level, required, gold, desc] = cols;
+        if (cols.length < 6) return null; // Update column check for 6 fields
+        const [level, required, gold, gem, dice, desc] = cols;
         return {
             level: parseInt(level),
             required: parseInt(required),
-            gold: parseInt(gold),
+            gold: parseInt(gold) || 0,
+            gem: parseInt(gem) || 0,
+            dice: parseInt(dice) || 0,
             desc: desc
         };
     }).filter(x => x);
@@ -1393,6 +1442,10 @@ function updateUI() {
     ui.money.textContent = state.money.toLocaleString();
     ui.turn.textContent = state.turn;
 
+    // [NEW] Update Earned/Spent Dice
+    if (ui.earnedDice) ui.earnedDice.textContent = (state.totalEarnedDice || 0).toLocaleString();
+    if (ui.spentDice) ui.spentDice.textContent = (state.totalSpentDice || 0).toLocaleString();
+
     // Collection UI
     const currentConfig = state.collection.config.find(c => c.level === state.collection.level);
     if (currentConfig) {
@@ -1401,11 +1454,19 @@ function updateUI() {
         ui.colTarget.textContent = currentConfig.required;
         const pct = Math.min((state.collection.points / currentConfig.required) * 100, 100);
         ui.colBar.style.width = `${pct}%`;
+
+        let rewardText = [];
+        if (currentConfig.gold > 0) rewardText.push(`💰${currentConfig.gold.toLocaleString()}`);
+        if (currentConfig.gem > 0) rewardText.push(`💎${currentConfig.gem.toLocaleString()}`);
+        if (currentConfig.dice > 0) rewardText.push(`🎲${currentConfig.dice.toLocaleString()}`);
+        if (currentConfig.desc) rewardText.push(currentConfig.desc);
+        if (ui.colReward) ui.colReward.textContent = `Next: ` + rewardText.join(" ");
     } else {
         ui.colLevel.textContent = "MAX";
         ui.colPoints.textContent = "-";
         ui.colTarget.textContent = "-";
         ui.colBar.style.width = "100%";
+        if (ui.colReward) ui.colReward.textContent = "已達最高等級";
     }
 
     // [NEW] Update Dice & Multiplier UI
@@ -1413,7 +1474,7 @@ function updateUI() {
     const multiplierSelect = document.getElementById('multiplier-select');
 
     if (diceInput && document.activeElement !== diceInput) {
-        diceInput.value = state.dice !== undefined ? state.dice : 1000;
+        diceInput.value = state.dice !== undefined ? state.dice : 10000;
     }
 
     // Disable Roll Button if insufficient dice
@@ -1588,7 +1649,12 @@ function renderIntegralUI() {
         uiBar.style.width = `${pct}%`;
         uiScore.textContent = score;
         uiTarget.textContent = required;
-        uiDesc.textContent = `Next: ${config.desc}`; // Simplified
+
+        let rewardText = [];
+        if (config.reward > 0) rewardText.push(`💰${config.reward}`);
+        if (config.gem > 0) rewardText.push(`💎${config.gem}`);
+        if (config.dice > 0) rewardText.push(`🎲${config.dice}`);
+        uiDesc.textContent = `Next: ` + (rewardText.length > 0 ? rewardText.join(" ") : config.desc);
     } else {
         // Max Level?
         uiBar.style.width = '100%';
@@ -1740,4 +1806,35 @@ function enableDraggable(el, handle) {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     }
+}
+
+// [NEW] Modal function for Dice Stats
+function showDiceStatsModal() {
+    const listEarned = document.getElementById('dice-stats-earned-list');
+    const listSpent = document.getElementById('dice-stats-spent-list');
+    if (!listEarned || !listSpent) return;
+
+    // Helper to generate specific li elements
+    const renderList = (dataObj, elList, emptyMsg) => {
+        const entries = Object.entries(dataObj).sort((a, b) => b[1] - a[1]); // Sort by highest amount
+        if (entries.length === 0) {
+            elList.innerHTML = `<li class="flex justify-between border-b border-white/5 pb-1"><span>${emptyMsg}</span><span class="text-white font-bold">0</span></li>`;
+            return;
+        }
+
+        let html = '';
+        for (const [key, value] of entries) {
+            html += `<li class="flex justify-between border-b border-white/5 pb-1">
+                      <span>${key}</span>
+                      <span class="text-white font-bold">${value.toLocaleString()}</span>
+                    </li>`;
+        }
+        elList.innerHTML = html;
+    };
+
+    renderList(state.earnedDiceBreakdown || {}, listEarned, "無紀錄");
+    renderList(state.spentDiceBreakdown || {}, listSpent, "無紀錄");
+
+    document.getElementById('dice-stats-modal').classList.remove('hidden');
+    document.getElementById('dice-stats-modal').classList.add('flex');
 }

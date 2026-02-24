@@ -79,30 +79,77 @@
                 <div id="center-panel"
                     class="absolute inset-[13%] bg-vibe-dark/80 rounded-xl border border-white/5 flex flex-col items-center justify-center p-6 gap-6 backdrop-blur-md z-10">
 
-                    <!-- Stats -->
-                    <div class="flex gap-4 w-full justify-center">
-                        <div class="text-center group">
-                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">金幣 (Coins)</div>
+                    <!-- Top Left Resources (Coins, Gems) -->
+                    <div
+                        class="absolute top-6 left-6 flex gap-4 bg-vibe-dark/50 p-3 rounded-lg border border-white/5 backdrop-blur-sm">
+                        <div class="group flex flex-col justify-center">
+                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">金幣
+                                (Coins)</div>
                             <div
-                                class="flex items-baseline justify-center gap-1 group-hover:scale-110 transition-transform duration-300">
-                                <span class="text-neon-green font-bold">$</span>
-                                <span id="display-money" class="text-3xl font-bold text-white">0</span>
+                                class="flex items-center gap-1 group-hover:scale-105 transition-transform duration-300 origin-left">
+                                <span class="text-neon-green font-bold text-xs leading-none mt-0.5">$</span>
+                                <span id="display-money" class="text-lg font-bold text-white leading-none">0</span>
                             </div>
                         </div>
-                        <div class="w-px bg-white/10"></div>
-                        <div class="text-center group">
-                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">寶石 (Gems)</div>
+                        <div class="w-px bg-white/10 shrink-0"></div>
+                        <div class="group flex flex-col justify-center">
+                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">寶石
+                                (Gems)</div>
                             <div
-                                class="flex items-baseline justify-center gap-1 group-hover:scale-110 transition-transform duration-300">
-                                <span class="text-neon-pink font-bold">💎</span>
-                                <span id="display-gems" class="text-3xl font-bold text-white">0</span>
+                                class="flex items-center gap-1 group-hover:scale-105 transition-transform duration-300 origin-left">
+                                <span class="text-neon-pink font-bold text-sm leading-none">💎</span>
+                                <span id="display-gems" class="text-lg font-bold text-white leading-none">0</span>
                             </div>
                         </div>
-                        <div class="w-px bg-white/10"></div>
-                        <div class="text-center group">
-                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">回合數 (Turn)</div>
-                            <div class="text-3xl font-bold text-white group-hover:scale-110 transition-transform duration-300"
+                    </div>
+
+                    <!-- Stats (Turn, Earned, Spent) -->
+                    <div class="flex gap-6 w-full justify-center mt-2">
+                        <div
+                            class="text-center group border border-transparent hover:border-white/10 p-2 rounded-lg transition-colors">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">回合數
+                                (Turn)</div>
+                            <div class="text-3xl font-bold text-white group-hover:scale-110 transition-transform duration-300 leading-none h-[36px] flex items-center justify-center"
                                 id="display-turn">0</div>
+                        </div>
+                        <div class="w-px bg-white/10 hidden md:block shrink-0 my-2"></div>
+                        <div class="text-center group hidden md:block border border-transparent hover:border-white/10 p-2 rounded-lg transition-colors relative cursor-pointer"
+                            onclick="showDiceStatsModal()">
+                            <div
+                                class="text-[10px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap flex items-center justify-center gap-1">
+                                累積得骰 (Earned)
+                                <span class="opacity-50 hover:opacity-100 transition-opacity">ℹ️</span>
+                            </div>
+                            <div
+                                class="flex items-center justify-center gap-1 group-hover:scale-110 transition-transform duration-300 h-[36px]">
+                                <span class="text-green-400 font-bold text-xl leading-none mt-0.5">+</span>
+                                <span id="display-earned-dice"
+                                    class="text-3xl font-bold text-white leading-none">0</span>
+                            </div>
+                        </div>
+                        <div class="w-px bg-white/10 hidden md:block shrink-0 my-2"></div>
+                        <div class="text-center group hidden md:block border border-transparent hover:border-white/10 p-2 rounded-lg transition-colors relative cursor-pointer"
+                            onclick="showDiceStatsModal()">
+                            <div
+                                class="text-[10px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap flex items-center justify-center gap-1">
+                                累積耗骰 (Spent)
+                                <span class="opacity-50 hover:opacity-100 transition-opacity">ℹ️</span>
+                            </div>
+                            <div
+                                class="flex items-center justify-center gap-1 group-hover:scale-110 transition-transform duration-300 h-[36px]">
+                                <span class="text-red-400 font-bold text-xl leading-none mt-0.5">-</span>
+                                <span id="display-spent-dice"
+                                    class="text-3xl font-bold text-white leading-none">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Reset Dice Stats Button -->
+                        <div class="hidden md:flex items-center justify-center ml-2">
+                            <button id="btn-reset-dice-stats"
+                                class="text-gray-500 hover:text-white opacity-50 hover:opacity-100 transition-all p-2 rounded-full hover:bg-white/10"
+                                title="重置骰子統計">
+                                🔄
+                            </button>
                         </div>
                     </div>
 
@@ -171,7 +218,7 @@
                             <div class="absolute inset-y-0 left-2 flex items-center pointer-events-none">
                                 <span class="text-xs">🎲</span>
                             </div>
-                            <input type="number" id="dice-balance" value="1000" min="0" step="1"
+                            <input type="number" id="dice-balance" value="10000" min="0" step="1"
                                 class="bg-transparent text-white text-xs font-bold pl-8 pr-2 py-2 outline-none w-full hover:bg-white/5 rounded"
                                 placeholder="Dice">
                         </div>
@@ -210,16 +257,16 @@
 
         <!-- Activity Panel (Floating Left of Sidebar) -->
         <div id="activity-panel"
-            class="absolute top-[88px] right-[20rem] w-60 flex flex-col gap-4 pointer-events-auto z-30 transition-shadow duration-300">
+            class="absolute top-[88px] right-[20rem] w-60 flex flex-col gap-2 pointer-events-auto z-30 transition-shadow duration-300">
             <!-- Collection Event Module -->
             <div id="activity-drag-handle"
-                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-3 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -right-10 -top-10 w-32 h-32 bg-pink-500/20 blur-[50px] rounded-full group-hover:bg-pink-500/30 transition-all">
                 </div>
 
-                <div class="flex justify-between items-center mb-3 relative z-10">
+                <div class="flex justify-between items-center mb-1 relative z-10">
                     <h2 class="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2">
                         <span class="text-lg">🍦</span>
                         <div>
@@ -228,12 +275,15 @@
                         </div>
                     </h2>
                     <div class="flex flex-col items-end">
-                        <div class="text-2xl font-black text-white leading-none">Lv.<span id="collection-level">1</span>
-                        </div>
-                        <div class="text-[9px] text-pink-300 font-mono mt-1"><span id="collection-points">0</span> /
-                            <span id="collection-target">3</span>
+                        <div class="text-[10px] font-bold text-gray-400 leading-none">Lv.<span id="collection-level"
+                                class="text-white text-base">1</span>
                         </div>
                     </div>
+                </div>
+
+                <div class="mb-1 relative z-10">
+                    <div class="text-base text-white font-bold font-mono tracking-wider"><span
+                            id="collection-points">0</span> / <span id="collection-target">3</span></div>
                 </div>
 
                 <!-- Progress Bar -->
@@ -243,24 +293,27 @@
                         <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
                     </div>
                 </div>
+                <div class="flex justify-end items-center mt-1 relative z-10">
+                    <div id="collection-reward-desc" class="text-[10px] text-pink-300 truncate max-w-[150px]">
+                        Next: ???</div>
+                </div>
             </div>
 
             <!-- Tournament Module -->
             <div id="tournament-panel"
-                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-neon-blue/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-3 rounded-xl shadow-2xl relative overflow-hidden group hover:border-neon-blue/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -left-10 -bottom-10 w-32 h-32 bg-neon-blue/20 blur-[50px] rounded-full group-hover:bg-neon-blue/30 transition-all">
                 </div>
 
-                <div class="flex justify-between items-center mb-3 relative z-10">
+                <div class="flex justify-between items-center mb-1 relative z-10">
                     <h2 class="text-xs font-bold text-neon-blue uppercase tracking-widest flex items-center gap-2">
                         <span class="text-lg">🏆</span>
                         <div>
                             <div>排名錦標賽</div>
                             <div class="text-[9px] text-gray-400">Ranking Tournament</div>
                         </div>
-                    </h2>
                     </h2>
                     <button id="btn-reset-tournament"
                         class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
@@ -274,7 +327,7 @@
                 </div>
 
                 <!-- Integral Reward Progress -->
-                <div class="mb-3 relative z-10">
+                <div class="mb-2 relative z-10">
                     <div class="flex justify-between items-end mb-1">
                         <div class="text-[10px] text-neon-blue font-bold tracking-wider">積分獎勵 (Integral)</div>
                         <div class="text-[10px] text-gray-400 font-mono">Lv.<span id="integral-level"
@@ -304,13 +357,13 @@
 
             <!-- New Roulette Panel -->
             <div id="roulette-side-panel"
-                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-4 rounded-xl shadow-2xl relative overflow-hidden group hover:border-orange-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-60 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-3 rounded-xl shadow-2xl relative overflow-hidden group hover:border-orange-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -left-10 -top-10 w-32 h-32 bg-orange-500/20 blur-[50px] rounded-full group-hover:bg-orange-500/30 transition-all">
                 </div>
 
-                <div class="flex justify-between items-center relative z-10 mb-2">
+                <div class="flex justify-between items-center relative z-10 mb-1">
                     <h2 class="text-xs font-bold text-orange-400 uppercase tracking-widest flex items-center gap-2">
                         <span class="text-lg">🎰</span>
                         <div>
@@ -570,6 +623,96 @@
                     </div>
                 </div>
             </div> <!-- End Right Side -->
+        </div>
+    </div>
+
+    <!-- Dice Stats Modal -->
+    <div id="dice-stats-modal"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex-col items-center justify-center">
+        <!-- Container -->
+        <div class="bg-vibe-dark/95 border border-white/10 rounded-2xl shadow-2xl w-[90%] max-w-lg p-6 relative">
+            <button onclick="document.getElementById('dice-stats-modal').classList.add('hidden')"
+                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors text-xl">✖</button>
+
+            <h2 class="text-xl font-bold text-white mb-6 text-center border-b border-white/10 pb-3">
+                <span class="text-neon-pink">🎲</span> 骰子統計 (Dice breakdown)
+            </h2>
+
+            <div class="flex gap-6">
+                <!-- Earned Column -->
+                <div class="flex-1 bg-white/5 rounded-xl p-4 border border-white/5">
+                    <h3 class="text-sm font-bold text-green-400 mb-3 flex items-center gap-2">
+                        <span>+</span> 獲得來源
+                    </h3>
+                    <ul id="dice-stats-earned-list" class="space-y-2 text-xs text-gray-300 min-h-[100px]">
+                        <li class="flex justify-between border-b border-white/5 pb-1"><span>無紀錄</span><span
+                                class="text-white font-bold">0</span></li>
+                    </ul>
+                </div>
+
+                <!-- Spent Column -->
+                <div class="flex-1 bg-white/5 rounded-xl p-4 border border-white/5">
+                    <h3 class="text-sm font-bold text-red-400 mb-3 flex items-center gap-2">
+                        <span>-</span> 消耗去向
+                    </h3>
+                    <ul id="dice-stats-spent-list" class="space-y-2 text-xs text-gray-300 min-h-[100px]">
+                        <li class="flex justify-between border-b border-white/5 pb-1"><span>無紀錄</span><span
+                                class="text-white font-bold">0</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-center">
+                <button onclick="document.getElementById('dice-stats-modal').classList.add('hidden')"
+                    class="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-6 rounded-lg transition-colors text-sm">
+                    關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dice Stats Modal -->
+    <div id="dice-stats-modal"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex-col items-center justify-center">
+        <!-- Container -->
+        <div class="bg-vibe-dark/95 border border-white/10 rounded-2xl shadow-2xl w-[90%] max-w-lg p-6 relative">
+            <button onclick="document.getElementById('dice-stats-modal').classList.add('hidden')"
+                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors text-xl">✖</button>
+
+            <h2 class="text-xl font-bold text-white mb-6 text-center border-b border-white/10 pb-3">
+                <span class="text-neon-pink">🎲</span> 骰子統計 (Dice breakdown)
+            </h2>
+
+            <div class="flex gap-6">
+                <!-- Earned Column -->
+                <div class="flex-1 bg-white/5 rounded-xl p-4 border border-white/5">
+                    <h3 class="text-sm font-bold text-green-400 mb-3 flex items-center gap-2">
+                        <span>+</span> 獲得來源
+                    </h3>
+                    <ul id="dice-stats-earned-list" class="space-y-2 text-xs text-gray-300 min-h-[100px]">
+                        <li class="flex justify-between border-b border-white/5 pb-1"><span>無紀錄</span><span
+                                class="text-white font-bold">0</span></li>
+                    </ul>
+                </div>
+
+                <!-- Spent Column -->
+                <div class="flex-1 bg-white/5 rounded-xl p-4 border border-white/5">
+                    <h3 class="text-sm font-bold text-red-400 mb-3 flex items-center gap-2">
+                        <span>-</span> 消耗去向
+                    </h3>
+                    <ul id="dice-stats-spent-list" class="space-y-2 text-xs text-gray-300 min-h-[100px]">
+                        <li class="flex justify-between border-b border-white/5 pb-1"><span>無紀錄</span><span
+                                class="text-white font-bold">0</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-center">
+                <button onclick="document.getElementById('dice-stats-modal').classList.add('hidden')"
+                    class="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-6 rounded-lg transition-colors text-sm">
+                    關閉
+                </button>
+            </div>
         </div>
     </div>
 

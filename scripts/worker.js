@@ -19,7 +19,11 @@ let state = {
     targetRollCount: 0,
     mode: 'IDLE', // IDLE, AUTO_PLAY, FAST_SIM
     logId: 0,
-    dice: 1000,
+    dice: 10000,
+    totalEarnedDice: 0, // [NEW] Track total earned dice
+    totalSpentDice: 0, // [NEW] Track total spent dice
+    earnedDiceBreakdown: {}, // [NEW] Track sources of earned dice { 'source': amount }
+    spentDiceBreakdown: {}, // [NEW] Track sources of spent dice { 'source': amount }
     multiplier: 1,
     systemConfig: {},
     roulette: { level: 1, drawnCounts: [], config: {}, integral: { score: 0, level: 1 } }, // [NEW] Roulette State
@@ -63,6 +67,8 @@ function handleTileEvent(pos) {
     const diceVal = (tile.diceReward || 0) * mult;
     if (diceVal > 0) {
         state.dice += diceVal;
+        state.totalEarnedDice += diceVal; // [NEW] Accumulate earned dice
+        state.earnedDiceBreakdown['地圖獎勵'] = (state.earnedDiceBreakdown['地圖獎勵'] || 0) + diceVal; // [NEW] Aggregate breakdown
         recordLog({
             turn: state.turn,
             position: pos,
@@ -136,7 +142,11 @@ self.onmessage = function (e) {
             state.collection.level = 1;
             state.collection.points = 0;
             state.collection.totalCollected = 0;
-            state.dice = 1000;
+            state.dice = 10000;
+            state.totalEarnedDice = 0; // Reset
+            state.totalSpentDice = 0; // Reset
+            state.earnedDiceBreakdown = {}; // Reset
+            state.spentDiceBreakdown = {}; // Reset
             state.multiplier = 1;
             state.gems = 0; // Reset gems
             state.roulette.level = 1; // Reset roulette level
@@ -197,13 +207,18 @@ self.onmessage = function (e) {
 
         case 'ADD_RESOURCES':
             if (payload.coin > 0) addMoney(payload.coin, payload.reason || "BONUS", payload.desc);
+            const gemEvent = payload.gemEvent || "ROULETTE_GEM";
+            const diceEvent = payload.diceEvent || "ROULETTE_DICE";
+            const eventSourceName = payload.eventSourceName || '輪盤抽獎';
             if (payload.gem > 0) {
                 state.gems += payload.gem;
-                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_GEM", delta_gold: 0, current_balance: state.money, detail: `大獎升級：寶石 ${payload.gem}` });
+                recordLog({ turn: state.turn, position: state.position, event: gemEvent, delta_gold: 0, current_balance: state.money, detail: payload.gemDesc || `大獎升級：寶石 ${payload.gem}` });
             }
             if (payload.dice > 0) {
                 state.dice += payload.dice;
-                recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_DICE", delta_gold: 0, current_balance: state.money, detail: `大獎升級：骰子 ${payload.dice}` });
+                state.totalEarnedDice += payload.dice; // Accumulate earned
+                state.earnedDiceBreakdown[eventSourceName] = (state.earnedDiceBreakdown[eventSourceName] || 0) + payload.dice;
+                recordLog({ turn: state.turn, position: state.position, event: diceEvent, delta_gold: 0, current_balance: state.money, detail: payload.diceDesc || `大獎升級：骰子 ${payload.dice}` });
             }
             sendUpdate();
             break;
@@ -218,6 +233,14 @@ self.onmessage = function (e) {
             state.logs = [];
             state.logId = 0;
             // No update needed, UI already cleared
+            break;
+
+        case 'RESET_DICE_STATS':
+            state.totalEarnedDice = 0;
+            state.totalSpentDice = 0;
+            state.earnedDiceBreakdown = {};
+            state.spentDiceBreakdown = {};
+            sendUpdate();
             break;
 
         case 'EXPORT_LOGS':
@@ -385,6 +408,9 @@ function execTurn(isAuto, silent = false) {
     // Deduct Dice
     // console.log(`Consuming Dice: ${state.multiplier} (Current: ${state.dice})`);
     state.dice -= state.multiplier;
+    state.totalSpentDice += state.multiplier; // Accumulate spent
+    state.spentDiceBreakdown['基礎擲骰'] = (state.spentDiceBreakdown['基礎擲骰'] || 0) + state.multiplier; // [NEW] Aggregate breakdown
+
 
     state.rollCount++;
     const rollResult = rollDice(); // Now returns { steps, details } or just steps if we didn't update it fully? 
@@ -510,6 +536,13 @@ function handleTileEvent(pos) {
     const diceVal = (tile.diceReward || 0) * mult;
     if (diceVal !== 0) {
         state.dice = Math.max(0, state.dice + diceVal); // [FIX] No negative dice
+        if (diceVal > 0) {
+            state.totalEarnedDice += diceVal; // Accumulate earned
+            state.earnedDiceBreakdown['地圖獎勵'] = (state.earnedDiceBreakdown['地圖獎勵'] || 0) + diceVal; // Aggregate breakdown
+        } else {
+            state.totalSpentDice += Math.abs(diceVal); // Accumulate spent
+            state.spentDiceBreakdown['地圖事件懲罰'] = (state.spentDiceBreakdown['地圖事件懲罰'] || 0) + Math.abs(diceVal); // Aggregate breakdown
+        }
         const msg = diceVal > 0 ? `獲得骰子 ${diceVal}` : `失去骰子 ${Math.abs(diceVal)}`;
         recordLog({
             turn: state.turn,
@@ -560,8 +593,28 @@ function checkCollectionEvent(pos) {
             state.collection.level++;
 
             // Reward
-            const reward = currentConfig.gold * state.multiplier;
-            addMoney(reward, "EVENT_REWARD", `活動升級 Lv.${state.collection.level - 1} -> Lv.${state.collection.level}! ${currentConfig.desc} (x${state.multiplier})`);
+            const reward = currentConfig.gold;
+            if (reward > 0) addMoney(reward, "EVENT_REWARD", `活動升級 Lv.${state.collection.level - 1} -> Lv.${state.collection.level}! ${currentConfig.desc}`);
+
+            const gemReward = (currentConfig.gem || 0);
+            if (gemReward > 0) {
+                state.gems += gemReward;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "EVENT_REWARD_GEM", delta_gold: 0, current_balance: state.money,
+                    detail: `活動升級寶石：${gemReward}`
+                });
+            }
+
+            const diceReward = (currentConfig.dice || 0);
+            if (diceReward > 0) {
+                state.dice += diceReward;
+                state.totalEarnedDice += diceReward;
+                state.earnedDiceBreakdown['收集活動獎勵'] = (state.earnedDiceBreakdown['收集活動獎勵'] || 0) + diceReward;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "EVENT_REWARD_DICE", delta_gold: 0, current_balance: state.money,
+                    detail: `活動升級骰子：${diceReward}`
+                });
+            }
 
             // Update config for next iteration
             currentConfig = state.collection.config.find(c => c.level === state.collection.level);
@@ -648,6 +701,10 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
         diceRoll: lastDiceRoll,
         isAuto: isAuto,
         dice: state.dice, // Send back dice
+        totalEarnedDice: state.totalEarnedDice, // [NEW] Send total earned dice
+        totalSpentDice: state.totalSpentDice, // [NEW] Send total spent dice
+        earnedDiceBreakdown: state.earnedDiceBreakdown, // [NEW] Send breakdown
+        spentDiceBreakdown: state.spentDiceBreakdown, // [NEW] Send breakdown
         multiplier: state.multiplier, // Send back multiplier
         gems: state.gems, // [NEW] Send back gems
         roulette: {
@@ -700,6 +757,9 @@ function spinRoulette() {
             }
             if (currentCfg.dice > 0) {
                 state.dice += currentCfg.dice;
+                state.totalEarnedDice += currentCfg.dice; // Accumulate
+                state.earnedDiceBreakdown['輪盤抽獎'] = (state.earnedDiceBreakdown['輪盤抽獎'] || 0) + currentCfg.dice;
+                state.roulette.stats.totalDice = (state.roulette.stats.totalDice || 0) + currentCfg.dice; // Track Roulette local stats
                 recordLog({ turn: state.turn, position: state.position, event: "ROULETTE_DICE", delta_gold: 0, current_balance: state.money, detail: `大獎升級：骰子 ${currentCfg.dice}` });
             }
 
@@ -799,6 +859,8 @@ function spinRoulette() {
         }
         if (selected.dice > 0) {
             state.dice = Math.max(0, state.dice + selected.dice);
+            state.totalEarnedDice += selected.dice; // Accumulate earned
+            state.earnedDiceBreakdown['輪盤抽獎'] = (state.earnedDiceBreakdown['輪盤抽獎'] || 0) + selected.dice;
             state.roulette.stats.totalDice += selected.dice; // Track Dice
             recordLog({
                 turn: state.turn,
@@ -835,6 +897,10 @@ function sendRouletteUpdate(spinResultItem) {
             diceRoll: 0,
             isAuto: false, // Roulette doesn't count as auto move?
             dice: state.dice,
+            totalEarnedDice: state.totalEarnedDice,
+            totalSpentDice: state.totalSpentDice,
+            earnedDiceBreakdown: state.earnedDiceBreakdown,
+            spentDiceBreakdown: state.spentDiceBreakdown,
             multiplier: state.multiplier,
             gems: state.gems,
             roulette: {
