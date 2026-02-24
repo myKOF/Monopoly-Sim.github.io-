@@ -1626,14 +1626,14 @@ function updateStatsUI() {
     stats.sort((a, b) => b.count - a.count);
 
     ui.statsContent.innerHTML = stats.map((item, rank) => `
-        <div class="grid grid-cols-12 gap-1 px-3 py-1.5 hover:bg-white/5 border-b border-white/5 items-center text-[11px] group">
-            <div class="col-span-1 text-gray-500 font-mono">#${rank + 1}</div>
-            <div class="col-span-7 flex items-center gap-2 overflow-hidden">
-                <span class="text-base">${item.icon}</span>
+        <div class="grid grid-cols-12 gap-1 px-2 py-1 hover:bg-white/5 border-b border-white/5 items-center text-[9px] group">
+            <div class="col-span-1 text-gray-500 font-mono text-[8px]">#${rank + 1}</div>
+            <div class="col-span-7 flex items-center gap-1 overflow-hidden">
+                <span class="text-xs">${item.icon}</span>
                 <span class="${item.color.split(' ')[0]} font-medium truncate">${item.name}</span>
             </div>
             <div class="col-span-2 text-right font-mono text-white group-hover:text-neon-green transition-colors">${item.count}</div>
-             <div class="col-span-2 text-right font-mono text-gray-400"><span class="text-[10px]">${item.percent}%</span></div>
+             <div class="col-span-2 text-right font-mono text-gray-400"><span class="text-[8px]">${item.percent}%</span></div>
         </div>
     `).join('');
 }
@@ -1705,9 +1705,9 @@ function renderTournamentUI() {
 
             // Snap item
             return `
-            <div class="chk-rank flex items-center gap-2 p-2 rounded border ${border} text-xs snap-start shrink-0">
-                <div class="w-6 font-mono text-gray-500 text-center">#${rank}</div>
-                <div class="flex-1 ${text} truncate max-w-[120px]" title="${p.name}">${p.name}</div>
+            <div class="chk-rank flex items-center gap-1.5 p-1 rounded border ${border} text-[9px] snap-start shrink-0">
+                <div class="w-4 font-mono text-gray-500 text-center">#${rank}</div>
+                <div class="flex-1 ${text} truncate max-w-[100px]" title="${p.name}">${p.name}</div>
                 <div class="font-mono text-white">${p.score}</div>
             </div>
             `;
@@ -1807,10 +1807,32 @@ if (diceInput && multiplierSelect) {
 initGame();
 console.log("Script Loaded Successfully");
 
+// --- Sidebar Toggle Logic ---
+const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+const rightSidebar = document.getElementById('right-sidebar');
+const sidebarIcon = document.getElementById('sidebar-toggle-icon');
+
+if (btnToggleSidebar && rightSidebar) {
+    btnToggleSidebar.addEventListener('click', () => {
+        const isCollapsed = rightSidebar.classList.contains('translate-x-full');
+        if (isCollapsed) {
+            rightSidebar.classList.remove('translate-x-full');
+            sidebarIcon.style.transform = ''; // Reset rotation
+            // Make sure the button stays outside
+            btnToggleSidebar.classList.remove('-left-4');
+            btnToggleSidebar.classList.add('-left-4');
+        } else {
+            rightSidebar.classList.add('translate-x-full');
+            sidebarIcon.style.transform = 'rotate(180deg)';
+        }
+    });
+}
+
 // --- Draggable Logic ---
 enableDraggable(document.getElementById('activity-panel'), document.getElementById('activity-drag-handle'));
 enableDraggable(document.getElementById('tournament-panel'), document.getElementById('tournament-panel'));
 enableDraggable(document.getElementById('roulette-side-panel'), document.getElementById('roulette-side-panel'));
+enableDraggable(document.getElementById('2048-side-panel'), document.getElementById('2048-side-panel'));
 
 // --- Tournament Reset ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
@@ -1842,7 +1864,9 @@ if (btnResetTour) {
 
 function enableDraggable(el, handle) {
     let isDragging = false;
+    let isMouseDown = false;
     let startX, startY, initialLeft, initialTop;
+    let linkedElements = [];
 
     function normalizePosition() {
         if (getComputedStyle(el).position !== 'fixed') {
@@ -1853,34 +1877,57 @@ function enableDraggable(el, handle) {
             el.style.right = 'auto';
             el.style.bottom = 'auto';
             el.style.margin = '0';
+            // Elevate permanently so siblings moving up don't obscure it
+            el.style.zIndex = '40';
         }
     }
 
     handle.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
+        // Don't drag if clicking a button, input, or select
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.closest('button')) {
+            return;
+        }
 
-        // 1. Disable transition immediately to prevent jump
-        el.style.transition = 'none';
-
-        // 2. Normalize to fixed positioning
-        normalizePosition();
-
-        isDragging = true;
+        isMouseDown = true;
         startX = e.clientX;
         startY = e.clientY;
-
-        // 3. Capture starting style positions (should be set by normalize now)
-        initialLeft = parseFloat(el.style.left) || 0;
-        initialTop = parseFloat(el.style.top) || 0;
-
-        el.classList.add('z-50');
 
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     });
 
     function onMouseMove(e) {
-        if (!isDragging) return;
+        if (!isMouseDown) return;
+
+        // If not dragging yet, check threshold
+        if (!isDragging) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                isDragging = true;
+                el.style.transition = 'none';
+                normalizePosition();
+
+                initialLeft = parseFloat(el.style.left) || 0;
+                initialTop = parseFloat(el.style.top) || 0;
+
+                // Track fixed children to apply the same delta (synchronous movement)
+                linkedElements = Array.from(el.children).filter(child => getComputedStyle(child).position === 'fixed').map(child => {
+                    child.style.transition = 'none'; // Disable transition to avoid "following" effect
+                    return {
+                        el: child,
+                        initialLeft: parseFloat(child.style.left) || 0,
+                        initialTop: parseFloat(child.style.top) || 0
+                    };
+                });
+
+                el.classList.add('z-50');
+            } else {
+                return; // Wait until threshold met
+            }
+        }
+
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
 
@@ -1889,12 +1936,24 @@ function enableDraggable(el, handle) {
 
         el.style.left = `${newLefty}px`;
         el.style.top = `${newTop}px`;
+
+        linkedElements.forEach(item => {
+            item.el.style.left = `${item.initialLeft + dx}px`;
+            item.el.style.top = `${item.initialTop + dy}px`;
+        });
     }
 
     function onMouseUp() {
-        isDragging = false;
-        el.style.transition = ''; // Re-enable transition
-        el.classList.remove('z-50');
+        isMouseDown = false;
+        if (isDragging) {
+            isDragging = false;
+            el.style.transition = ''; // Re-enable transition
+            el.classList.remove('z-50');
+            linkedElements.forEach(item => {
+                item.el.style.transition = ''; // Restore child element transition
+            });
+            linkedElements = [];
+        }
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     }
