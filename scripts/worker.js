@@ -313,7 +313,13 @@ function init2048State() {
         nextStaminaTick: 0,
         maxUnlockedLevel: 1,
         claimedMilestones: [],
-        isGameOver: false
+        isGameOver: false,
+        stats: {
+            totalStaminaUsed: 0,
+            totalDiceEarned: 0,
+            totalGemsEarned: 0,
+            totalGoldEarned: 0
+        }
     };
     // Spawn 2 initial tiles
     spawn2048Tile();
@@ -343,9 +349,13 @@ function update2048MaxLevel(level) {
         if (level >= 2 && state.systemConfig && state.systemConfig.config2048) {
             const rewardRow = state.systemConfig.config2048.find(r => r.level === level);
             if (rewardRow) {
-                if (rewardRow.coin) addMoney(rewardRow.coin, 'EVENT_REWARD', `2048 合成 Lv.${level} 獎勵`);
+                if (rewardRow.coin) {
+                    addMoney(rewardRow.coin, 'EVENT_REWARD', `2048 合成 Lv.${level} 獎勵`);
+                    state.game2048.stats.totalGoldEarned += rewardRow.coin;
+                }
                 if (rewardRow.gem) {
                     state.gems += rewardRow.gem;
+                    state.game2048.stats.totalGemsEarned += rewardRow.gem;
                     recordLog({
                         turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
                         current_balance: state.money, detail: `2048 Lv.${level} 獎勵：寶石 ${rewardRow.gem}`
@@ -354,6 +364,7 @@ function update2048MaxLevel(level) {
                 if (rewardRow.dice) {
                     state.dice += rewardRow.dice;
                     state.totalEarnedDice += rewardRow.dice;
+                    state.game2048.stats.totalDiceEarned += rewardRow.dice;
                     state.earnedDiceBreakdown['2048首次合成'] = (state.earnedDiceBreakdown['2048首次合成'] || 0) + rewardRow.dice;
                     recordLog({
                         turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
@@ -377,9 +388,13 @@ function check2048Milestones() {
     config.forEach((row, idx) => {
         if (score >= row.required && !state.game2048.claimedMilestones.includes(idx)) {
             state.game2048.claimedMilestones.push(idx);
-            if (row.coin) addMoney(row.coin, 'EVENT_REWARD', `2048 積分獎勵 (${row.required}分)`);
+            if (row.coin) {
+                addMoney(row.coin, 'EVENT_REWARD', `2048 積分獎勵 (${row.required}分)`);
+                state.game2048.stats.totalGoldEarned += row.coin;
+            }
             if (row.gem) {
                 state.gems += row.gem;
+                state.game2048.stats.totalGemsEarned += row.gem;
                 recordLog({
                     turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
                     current_balance: state.money, detail: `2048 積分獎勵：寶石 ${row.gem}`
@@ -388,6 +403,7 @@ function check2048Milestones() {
             if (row.dice) {
                 state.dice += row.dice;
                 state.totalEarnedDice += row.dice;
+                state.game2048.stats.totalDiceEarned += row.dice;
                 state.earnedDiceBreakdown['2048積分達標'] = (state.earnedDiceBreakdown['2048積分達標'] || 0) + row.dice;
                 recordLog({
                     turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
@@ -495,6 +511,7 @@ function handle2048Event(payload) {
 
         if (moved) {
             state.game2048.stamina -= 1;
+            state.game2048.stats.totalStaminaUsed += 1;
             spawn2048Tile();
             check2048Milestones();
             if (check2048GameOver()) state.game2048.isGameOver = true;

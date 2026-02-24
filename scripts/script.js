@@ -227,7 +227,16 @@ const ui = {
     disp2048MSCurrentScore: document.getElementById('ms-current-score'),
 
     stmPreviewCurrent: document.getElementById('stm-preview-current'),
-    stmPreviewBar: document.getElementById('stm-preview-bar')
+    stmPreviewBar: document.getElementById('stm-preview-bar'),
+
+    btn2048Auto: document.getElementById('btn-2048-auto'),
+    dot2048Auto: document.getElementById('2048-auto-dot'),
+    select2048Speed: document.getElementById('select-2048-speed'),
+
+    stat2048Stm: document.getElementById('2048-stat-stm'),
+    stat2048Dice: document.getElementById('2048-stat-dice'),
+    stat2048Gems: document.getElementById('2048-stat-gems'),
+    stat2048Gold: document.getElementById('2048-stat-gold'),
 };
 
 // Fallback Config
@@ -280,11 +289,8 @@ worker.onmessage = function (e) {
         // [NEW] 2048 State Sync
         if (payload.game2048) {
             state.game2048 = payload.game2048;
-            if (!ui.modal2048.classList.contains('hidden')) {
-                render2048();
-            } else {
-                update2048PreviewBar();
-            }
+            render2048();
+            update2048PreviewBar();
         }
 
         // [NEW] Roulette State Sync
@@ -2017,6 +2023,14 @@ function render2048() {
     const pct = Math.min(100, (stamina / (maxStamina || 100)) * 100);
     ui.stmBar.style.width = `${pct}%`;
 
+    // Update Stats
+    if (state.game2048.stats) {
+        ui.stat2048Stm.textContent = state.game2048.stats.totalStaminaUsed || 0;
+        ui.stat2048Dice.textContent = state.game2048.stats.totalDiceEarned || 0;
+        ui.stat2048Gems.textContent = state.game2048.stats.totalGemsEarned || 0;
+        ui.stat2048Gold.textContent = (state.game2048.stats.totalGoldEarned || 0).toLocaleString();
+    }
+
     // Handle Time Remaining (if any)
     if (stamina >= (maxStamina || 100)) {
         ui.stmTime.textContent = 'MAX';
@@ -2085,16 +2099,18 @@ function render2048() {
     // Render Next Merge Rewards
     ui.disp2048NextRewards.innerHTML = '';
     if (state.systemConfig && state.systemConfig.config2048) {
-        const firstMergeConfig = state.systemConfig.config2048;
-        // Show next 2 levels
-        const nextLvls = firstMergeConfig.filter(c => c.level > maxUnlockedLevel).slice(0, 2);
+        // Show all reward tiers from Level 2 upwards
+        const allTiers = state.systemConfig.config2048.filter(c => c.level >= 2);
 
-        if (nextLvls.length === 0) {
-            ui.disp2048NextRewards.innerHTML = '<div class="text-xs text-gray-500 text-center py-2">所有首次合成獎勵已領取完畢！</div>';
+        if (allTiers.length === 0) {
+            ui.disp2048NextRewards.innerHTML = '<div class="text-xs text-gray-500 text-center py-2">無合成獎勵設定</div>';
         } else {
-            nextLvls.forEach(c => {
+            allTiers.forEach(c => {
                 const item = document.createElement('div');
-                item.className = "flex justify-between items-center bg-black/20 p-2 rounded border border-white/5";
+                const isClaimed = c.level <= maxUnlockedLevel;
+                const opacityClass = isClaimed ? 'opacity-40' : 'opacity-100';
+
+                item.className = `flex justify-between items-center bg-black/20 p-2 rounded border border-white/5 ${opacityClass}`;
 
                 let rewardsHtml = '';
                 if (c.coin) rewardsHtml += `<span class="text-yellow-400 mr-2">💰 ${c.coin}</span>`;
@@ -2104,7 +2120,7 @@ function render2048() {
                 item.innerHTML = `
                     <div class="flex items-center gap-2">
                         <div class="w-6 h-6 rounded bg-[#f59563] text-white font-bold flex items-center justify-center text-[10px]">${Math.pow(2, c.level)}</div>
-                        <span class="text-xs text-gray-300">解鎖 Lv.${c.level}</span>
+                        <span class="text-xs ${isClaimed ? 'text-emerald-400' : 'text-gray-300'}">${isClaimed ? '已解鎖' : '解鎖'} Lv.${c.level}</span>
                     </div>
                     <div class="text-[10px] bg-black/50 px-2 py-1 rounded flex items-center shadow-inner">
                         ${rewardsHtml || '無'}
@@ -2165,22 +2181,22 @@ function process2048Milestones() {
         if (c.gem) rewardsHtml += `<span class="text-purple-400 mr-2">💎 ${c.gem}</span>`;
         if (c.dice) rewardsHtml += `<span class="text-green-400">🎲 ${c.dice}</span>`;
 
-        item.className = `p-3 rounded-lg border ${borderClass} ${bgClass} relative overflow-hidden transition-colors`;
+        item.className = `p-2 rounded border ${borderClass} ${bgClass} relative overflow-hidden transition-colors`;
         item.innerHTML = `
             <!-- Progress bg -->
             <div class="absolute left-0 top-0 bottom-0 bg-emerald-500/5 transition-all duration-500" style="width: ${progressPct}%"></div>
             
-            <div class="relative z-10 flex justify-between items-center">
-                <div class="flex-1">
-                    <div class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
-                        <span>達標 ${c.required} 分</span>
-                        ${c.desc ? `<span class="text-[10px] font-normal text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded">${c.desc}</span>` : ''}
+            <div class="relative z-10 flex justify-between items-center whitespace-nowrap">
+                <div class="flex-1 min-w-0">
+                    <div class="text-[12px] font-bold text-gray-100 flex items-center gap-1.5">
+                        <span class="shrink-0">達標 ${c.required} 分</span>
+                        ${c.desc ? `<span class="text-[9px] font-normal text-emerald-400 bg-emerald-400/10 px-1 py-0 rounded truncate max-w-[80px]">${c.desc}</span>` : ''}
                     </div>
-                    <div class="text-xs bg-black/40 inline-flex px-2 py-1 rounded shadow-inner">
+                    <div class="text-[11px] mt-0.5 opacity-90">
                         ${rewardsHtml || '無'}
                     </div>
                 </div>
-                <div>${statusHtml}</div>
+                <div class="shrink-0 ml-2">${statusHtml}</div>
             </div>
         `;
         ui.disp2048MSList.appendChild(item);
@@ -2208,6 +2224,7 @@ if (ui.btn2048Open) {
 
 if (ui.btnClose2048) {
     ui.btnClose2048.addEventListener('click', () => {
+        if (is2048Auto) stop2048Auto();
         ui.modal2048.classList.add('opacity-0');
         setTimeout(() => {
             ui.modal2048.classList.add('hidden');
@@ -2310,4 +2327,78 @@ function handleSwipe(startX, startY, endX, endY) {
             worker.postMessage({ type: 'MOVE_2048', payload: { action: 'MOVE', direction } });
         }
     }
+}
+
+// 2048 Auto Play Logic
+let is2048Auto = false;
+let auto2048Interval = null;
+let auto2048DirIdx = 0; // 0:UP, 1:RIGHT, 2:DOWN, 3:LEFT
+const auto2048Dirs = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+
+function toggle2048Auto() {
+    if (is2048Auto) {
+        stop2048Auto();
+    } else {
+        start2048Auto();
+    }
+}
+
+function start2048Auto() {
+    if (!state.game2048 || state.game2048.stamina < 1 || state.game2048.isGameOver) return;
+
+    // Clear previous if any
+    if (auto2048Interval) clearInterval(auto2048Interval);
+
+    is2048Auto = true;
+    ui.btn2048Auto.classList.add('bg-emerald-500/20', 'border-emerald-500', 'text-emerald-400', 'font-bold');
+    ui.btn2048Auto.textContent = '停止';
+    // Re-insert dot because we just overwrote textContent
+    const dot = document.createElement('span');
+    dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+    dot.id = "2048-auto-dot";
+    ui.btn2048Auto.prepend(dot);
+    ui.dot2048Auto = dot; // Update ref
+
+    const speed = parseInt(ui.select2048Speed.value) || 2;
+    const intervalMs = Math.floor(1000 / speed);
+
+    auto2048Interval = setInterval(() => {
+        if (!is2048Auto || !state.game2048 || state.game2048.stamina < 1 || state.game2048.isGameOver) {
+            stop2048Auto();
+            return;
+        }
+
+        const dir = auto2048Dirs[auto2048DirIdx];
+        worker.postMessage({ type: 'MOVE_2048', payload: { action: 'MOVE', direction: dir } });
+
+        // Cycle clockwise
+        auto2048DirIdx = (auto2048DirIdx + 1) % 4;
+    }, intervalMs);
+}
+
+function stop2048Auto() {
+    is2048Auto = false;
+    if (auto2048Interval) {
+        clearInterval(auto2048Interval);
+        auto2048Interval = null;
+    }
+    ui.btn2048Auto.classList.remove('bg-emerald-500/20', 'border-emerald-500', 'text-emerald-400', 'font-bold');
+    ui.btn2048Auto.textContent = '啟動';
+    const dot = document.createElement('span');
+    dot.className = "w-2 h-2 rounded-full bg-gray-500";
+    dot.id = "2048-auto-dot";
+    ui.btn2048Auto.prepend(dot);
+    ui.dot2048Auto = dot; // Update ref
+}
+
+if (ui.btn2048Auto) {
+    ui.btn2048Auto.addEventListener('click', toggle2048Auto);
+}
+
+if (ui.select2048Speed) {
+    ui.select2048Speed.addEventListener('change', () => {
+        if (is2048Auto) {
+            start2048Auto(); // Restart with new speed
+        }
+    });
 }
