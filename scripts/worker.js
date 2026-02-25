@@ -359,6 +359,15 @@ function init2048State() {
     spawn2048Tile();
 }
 
+function reset2048Board() {
+    if (!state.game2048) return;
+    state.game2048.grid = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+    state.game2048.isGameOver = false;
+    // Spawn 2 initial tiles
+    spawn2048Tile();
+    spawn2048Tile();
+}
+
 function spawn2048Tile() {
     const empty = [];
     for (let r = 0; r < 4; r++) {
@@ -471,6 +480,12 @@ function handle2048Event(payload) {
     if (!state.game2048) init2048State();
 
     if (payload.action === 'RESTART') {
+        reset2048Board();
+        sendUpdate();
+        return;
+    }
+
+    if (payload.action === 'FULL_RESET') {
         init2048State();
         sendUpdate();
         return;

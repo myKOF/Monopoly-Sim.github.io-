@@ -6,6 +6,8 @@ let rouletteConfig = {};
 let rouletteIntegralConfig = [];
 let rouletteInterval = null;
 let partnerGameConfig = []; // [NEW]
+let partnerAutoInjectState = { 1: false, 2: false, 3: false, 4: false }; // [NEW]
+let partnerAutoInjectInterval = null; // [NEW]
 
 // debug: visual error logger (Keep this)
 window.onerror = function (msg, url, line, col, error) {
@@ -230,6 +232,12 @@ const ui = {
     colTarget: document.getElementById('collection-target'),
     colBar: document.getElementById('collection-bar'),
     colReward: document.getElementById('collection-reward-desc'),
+    colRewardsToggle: document.getElementById('collection-rewards-toggle'),
+    colRewardsModal: document.getElementById('collection-rewards-modal'),
+    colRewardsBackdrop: document.getElementById('collection-rewards-backdrop'),
+    colRewardsList: document.getElementById('collection-rewards-list'),
+    colRewardsContent: document.getElementById('collection-rewards-content'),
+    btnCloseColRewards: document.getElementById('btn-close-collection-rewards'),
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
     btnFast: document.getElementById('btn-fast'),
@@ -245,6 +253,7 @@ const ui = {
     disp2048Max: document.getElementById('disp-2048-max-level'),
     disp2048NextRewards: document.getElementById('2048-next-rewards'),
     btnRestart2048: document.getElementById('btn-restart-2048'),
+    btnFullReset2048: document.getElementById('btn-full-reset-2048'),
     overlay2048: document.getElementById('grid-2048-overlay'),
     overlayTitle2048: document.getElementById('grid-overlay-title'),
 
@@ -1591,6 +1600,43 @@ function renderBoard() {
 }
 
 // [NEW] Render Partner Game
+function renderCollectionRewardsList() {
+    if (!state.collection || !state.collection.config || !ui.colRewardsContent) return;
+
+    ui.colRewardsContent.innerHTML = state.collection.config.map(item => {
+        const isCompleted = item.level < state.collection.level;
+        const isCurrent = item.level === state.collection.level;
+
+        let rewards = [];
+        if (item.coin > 0) rewards.push(`💰${item.coin.toLocaleString()}`);
+        if (item.gem > 0) rewards.push(`💎${item.gem.toLocaleString()}`);
+        if (item.dice > 0) rewards.push(`🎲${item.dice.toLocaleString()}`);
+
+        const statusClass = isCompleted ? 'opacity-50 grayscale' : (isCurrent ? 'ring-2 ring-pink-500 bg-pink-500/15' : 'bg-white/10');
+        const checkmark = isCompleted ? '<span class="text-neon-green text-lg ml-auto">✓</span>' : '';
+        const currentTag = isCurrent ? '<span class="text-[9px] font-bold bg-pink-500 text-white px-2 py-0.5 rounded ml-auto animate-pulse shadow-lg shadow-pink-500/20">CURRENT</span>' : '';
+
+        return `
+            <div class="flex items-center gap-4 p-3 rounded-xl border border-white/10 ${statusClass} transition-all duration-300">
+                <div class="w-10 h-10 rounded-lg bg-black/40 flex items-center justify-center font-bold font-mono text-lg ${isCurrent ? 'text-pink-400' : 'text-gray-400'}">
+                    ${item.level}
+                </div>
+                <div class="flex flex-col flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <div class="text-white text-base font-bold tracking-tight">${rewards.join(' ')}</div>
+                        <div class="text-[10px] text-gray-400 bg-black/30 px-2 py-0.5 rounded-full font-mono">
+                            所需積分: <span class="${isCompleted ? 'text-gray-500' : 'text-yellow-400'}">${item.required}</span>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-gray-400 mt-1 font-medium">${item.desc || 'Reward Tier'}</div>
+                </div>
+                ${checkmark}
+                ${currentTag}
+            </div>
+        `;
+    }).join('');
+}
+
 function renderPartnerGame() {
     if (!state.partnerGame) return;
     const pg = state.partnerGame;
@@ -1641,8 +1687,23 @@ function renderPartnerGame() {
         if (btnInject) {
             if (currentTotal >= maxScore) {
                 btnInject.classList.add('opacity-50', 'pointer-events-none');
+                // Stop auto if finished
+                if (partnerAutoInjectState[id]) {
+                    partnerAutoInjectState[id] = false;
+                }
             } else {
                 btnInject.classList.remove('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        const btnAuto = document.querySelector(`.btn-partner-auto[data-id="${id}"]`);
+        if (btnAuto) {
+            if (partnerAutoInjectState[id]) {
+                btnAuto.classList.add('bg-neon-blue', 'text-white', 'shadow-[0_0_15px_rgba(59,130,246,0.5)]', 'active');
+                btnAuto.textContent = "AUTO ON";
+            } else {
+                btnAuto.classList.remove('bg-neon-blue', 'text-white', 'shadow-[0_0_15px_rgba(59,130,246,0.5)]', 'active');
+                btnAuto.textContent = "AUTO";
             }
         }
 
@@ -2259,10 +2320,10 @@ function render2048() {
             // Draw background empty slots
             const bgSlot = document.createElement('div');
             bgSlot.className = "absolute rounded-md bg-[#cdc1b4]";
-            bgSlot.style.width = '23.5%';
-            bgSlot.style.height = '23.5%';
-            bgSlot.style.left = `${c * 25.5 + 2}%`;
-            bgSlot.style.top = `${r * 25.5 + 2}%`;
+            bgSlot.style.width = '22.5%';
+            bgSlot.style.height = '22.5%';
+            bgSlot.style.left = `${c * 24.5 + 2}%`;
+            bgSlot.style.top = `${r * 24.5 + 2}%`;
             ui.grid2048.appendChild(bgSlot);
 
             // Draw active tiles
@@ -2289,10 +2350,10 @@ function render2048() {
                 tile.className = `absolute flex items-center justify-center font-bold rounded-md transition-all duration-150 ${sizeClass}`;
 
                 // Position and size
-                tile.style.width = '23.5%';
-                tile.style.height = '23.5%';
-                tile.style.left = `${c * 25.5 + 2}%`;
-                tile.style.top = `${r * 25.5 + 2}%`;
+                tile.style.width = '22.5%';
+                tile.style.height = '22.5%';
+                tile.style.left = `${c * 24.5 + 2}%`;
+                tile.style.top = `${r * 24.5 + 2}%`;
 
                 // Colors
                 tile.style.backgroundColor = bgColor;
@@ -2451,6 +2512,13 @@ if (ui.btnClose2048) {
 if (ui.btnRestart2048) {
     ui.btnRestart2048.addEventListener('click', () => {
         worker.postMessage({ type: 'MOVE_2048', payload: { action: 'RESTART' } });
+    });
+}
+if (ui.btnFullReset2048) {
+    ui.btnFullReset2048.addEventListener('click', () => {
+        if (confirm('確定要完全重置 2048 活動嗎？這將清空所有積分、體力與獎勵紀錄。')) {
+            worker.postMessage({ type: 'MOVE_2048', payload: { action: 'FULL_RESET' } });
+        }
     });
 }
 
@@ -2660,11 +2728,73 @@ if (ui.partnerMultDropdown) {
     });
 }
 
-// Tower interactions (Inject/Join)
+// Icon Collection Rewards Toggle (Centered Modal)
+if (ui.colRewardsToggle && ui.colRewardsModal) {
+    const showModal = () => {
+        renderCollectionRewardsList();
+        ui.colRewardsModal.classList.remove('hidden');
+        // Trigger animations
+        setTimeout(() => {
+            ui.colRewardsBackdrop.style.opacity = '1';
+            ui.colRewardsList.style.opacity = '1';
+            ui.colRewardsList.style.transform = 'scale(1)';
+        }, 10);
+    };
+
+    const hideModal = () => {
+        ui.colRewardsBackdrop.style.opacity = '0';
+        ui.colRewardsList.style.opacity = '0';
+        ui.colRewardsList.style.transform = 'scale(0.9)';
+        setTimeout(() => ui.colRewardsModal.classList.add('hidden'), 300);
+    };
+
+    ui.colRewardsToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showModal();
+    });
+
+    if (ui.btnCloseColRewards) ui.btnCloseColRewards.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideModal();
+    });
+    if (ui.colRewardsBackdrop) ui.colRewardsBackdrop.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideModal();
+    });
+}
+
+// Close dropdowns on outside click (for other dropdowns if any, but modal is handled above)
+document.addEventListener('click', (e) => {
+    // Other dropdown closing logic can remain or be updated if needed
+});
+
+// Tower interactions (Inject/Join/Auto)
 document.addEventListener('click', (e) => {
     if (e.target.classList.contains('btn-partner-inject')) {
         const id = parseInt(e.target.dataset.id);
         worker.postMessage({ type: 'PARTNER_GAME_INJECT', payload: { towerId: id } });
+    }
+    if (e.target.classList.contains('btn-partner-auto')) {
+        const id = parseInt(e.target.dataset.id);
+        partnerAutoInjectState[id] = !partnerAutoInjectState[id];
+
+        // Start interval if any are enabled
+        if (!partnerAutoInjectInterval) {
+            partnerAutoInjectInterval = setInterval(() => {
+                let anyActive = false;
+                Object.keys(partnerAutoInjectState).forEach(pid => {
+                    if (partnerAutoInjectState[pid]) {
+                        anyActive = true;
+                        worker.postMessage({ type: 'PARTNER_GAME_INJECT', payload: { towerId: parseInt(pid) } });
+                    }
+                });
+                if (!anyActive) {
+                    clearInterval(partnerAutoInjectInterval);
+                    partnerAutoInjectInterval = null;
+                }
+            }, 200);
+        }
+        renderPartnerGame();
     }
     if (e.target.classList.contains('btn-partner-join')) {
         const id = parseInt(e.target.dataset.id);

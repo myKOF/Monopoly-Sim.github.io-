@@ -257,7 +257,7 @@
             class="absolute top-4 right-[15.25rem] w-48 flex flex-col gap-2 pointer-events-auto z-30 transition-shadow duration-300">
             <!-- Collection Event Module -->
             <div id="activity-drag-handle"
-                class="w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl relative overflow-hidden group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl relative group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -right-10 -top-10 w-24 h-24 bg-pink-500/20 blur-[40px] rounded-full group-hover:bg-pink-500/30 transition-all">
@@ -278,22 +278,31 @@
                     </div>
                 </div>
 
-                <div class="mb-1 relative z-10">
-                    <div class="text-sm text-white font-bold font-mono tracking-wider"><span
-                            id="collection-points">0</span> / <span id="collection-target">3</span></div>
-                </div>
+                <div id="collection-rewards-toggle"
+                    class="cursor-pointer hover:bg-white/5 -mx-1 px-1 py-1 rounded-lg transition-all relative z-10 group/toggle">
+                    <div class="mb-1">
+                        <div class="text-xs text-white/50 font-mono tracking-wider flex justify-between items-center">
+                            <span>PROGRESS</span>
+                            <span class="text-white font-bold"><span id="collection-points">0</span> / <span
+                                    id="collection-target">3</span></span>
+                        </div>
+                    </div>
 
-                <!-- Progress Bar -->
-                <div class="w-full h-2 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative z-10">
-                    <div id="collection-bar"
-                        class="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 w-0 transition-all duration-500 relative">
-                        <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                    <!-- Progress Bar -->
+                    <div class="w-full h-2 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative">
+                        <div id="collection-bar"
+                            class="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 w-0 transition-all duration-500 relative">
+                            <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center mt-1">
+                        <span class="text-[8px] text-gray-500 group-hover/toggle:text-pink-400 transition-colors">Click
+                            to view all rewards</span>
+                        <div id="collection-reward-desc" class="text-[10px] text-pink-300 truncate max-w-[100px]">
+                            Next: ???</div>
                     </div>
                 </div>
-                <div class="flex justify-end items-center mt-1 relative z-10">
-                    <div id="collection-reward-desc" class="text-[10px] text-pink-300 truncate max-w-[150px]">
-                        Next: ???</div>
-                </div>
+
             </div>
 
             <!-- Tournament Module -->
@@ -841,7 +850,7 @@
                             class="absolute inset-0 bg-black/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-xl opacity-0 pointer-events-none transition-opacity">
                             <div class="text-3xl font-bold text-white mb-2" id="grid-overlay-title">遊戲結束</div>
                             <button id="btn-restart-2048"
-                                class="px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded shadow-lg pointer-events-auto">再玩一次</button>
+                                class="px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded shadow-lg">再玩一次</button>
                         </div>
                     </div>
 
@@ -865,27 +874,29 @@
                         </div>
                     </div>
 
-                    <div class="mt-6 w-full max-w-[360px] grid grid-cols-2 gap-2 border-t border-white/5 pt-4">
-                        <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">總耗體力
-                                (Stamina)</div>
-                            <div class="text-base font-bold text-white" id="2048-stat-stm">0</div>
-                        </div>
-                        <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">總得骰量
-                                (Dice)</div>
-                            <div class="text-base font-bold text-green-400" id="2048-stat-dice">0</div>
-                        </div>
-                        <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">總得寶量
-                                (Gems)</div>
-                            <div class="text-base font-bold text-purple-400" id="2048-stat-gems">0</div>
-                        </div>
-                        <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">總得金量
-                                (Gold)</div>
-                            <div class="text-base font-bold text-yellow-400 flex items-center gap-1">
-                                <span class="text-[10px] opacity-70">$</span><span id="2048-stat-gold">0</span>
+                    <div class="mt-6 w-full max-w-[360px] flex flex-col gap-3 border-t border-white/5 pt-4">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
+                                <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">
+                                    總耗體力 (Stamina)</div>
+                                <div class="text-base font-bold text-white" id="2048-stat-stm">0</div>
+                            </div>
+                            <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
+                                <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">
+                                    總得骰量 (Dice)</div>
+                                <div class="text-base font-bold text-green-400" id="2048-stat-dice">0</div>
+                            </div>
+                            <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
+                                <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">
+                                    總得寶量 (Gems)</div>
+                                <div class="text-base font-bold text-purple-400" id="2048-stat-gems">0</div>
+                            </div>
+                            <div class="bg-black/20 p-2 rounded flex flex-col items-center border border-white/5">
+                                <div class="text-[9px] text-gray-500 uppercase tracking-widest mb-1 whitespace-nowrap">
+                                    總得金量 (Gold)</div>
+                                <div class="text-base font-bold text-yellow-400 flex items-center gap-1">
+                                    <span class="text-[10px] opacity-70">$</span><span id="2048-stat-gold">0</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -951,6 +962,12 @@
                     id="2048-ms-list">
                     <!-- Milestones injected here -->
                 </div>
+
+                <!-- Full Reset Button -->
+                <button id="btn-full-reset-2048"
+                    class="mt-4 w-full py-2 border border-red-500/30 hover:bg-red-500/10 text-red-400 text-[10px] rounded transition-all flex justify-center items-center gap-2 shrink-0">
+                    <span>🗑️</span> 重置整個 2048 活動 (清空積分與獎勵)
+                </button>
             </div>
         </div>
     </div>
@@ -1021,6 +1038,9 @@
                         </div>
                         <div class="flex gap-2">
                             <button
+                                class="btn-partner-auto px-2 py-2 bg-gray-500/20 hover:bg-gray-500/40 text-gray-400 text-[10px] font-bold rounded-lg border border-white/5 transition-all active:scale-95"
+                                data-id="1">AUTO</button>
+                            <button
                                 class="btn-partner-inject flex-1 py-2 bg-neon-blue hover:bg-neon-blue/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(59,130,246,0.2)]"
                                 data-id="1">注入 (Inject)</button>
                             <button
@@ -1065,6 +1085,9 @@
                             </div>
                         </div>
                         <div class="flex gap-2">
+                            <button
+                                class="btn-partner-auto px-2 py-2 bg-gray-500/20 hover:bg-gray-500/40 text-gray-400 text-[10px] font-bold rounded-lg border border-white/5 transition-all active:scale-95"
+                                data-id="2">AUTO</button>
                             <button
                                 class="btn-partner-inject flex-1 py-2 bg-neon-purple hover:bg-neon-purple/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(139,92,246,0.2)]"
                                 data-id="2">注入 (Inject)</button>
@@ -1111,6 +1134,9 @@
                         </div>
                         <div class="flex gap-2">
                             <button
+                                class="btn-partner-auto px-2 py-2 bg-gray-500/20 hover:bg-gray-500/40 text-gray-400 text-[10px] font-bold rounded-lg border border-white/5 transition-all active:scale-95"
+                                data-id="3">AUTO</button>
+                            <button
                                 class="btn-partner-inject flex-1 py-2 bg-neon-pink hover:bg-neon-pink/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(236,72,153,0.2)]"
                                 data-id="3">注入 (Inject)</button>
                             <button
@@ -1155,6 +1181,9 @@
                             </div>
                         </div>
                         <div class="flex gap-2">
+                            <button
+                                class="btn-partner-auto px-2 py-2 bg-gray-500/20 hover:bg-gray-500/40 text-gray-400 text-[10px] font-bold rounded-lg border border-white/5 transition-all active:scale-95"
+                                data-id="4">AUTO</button>
                             <button
                                 class="btn-partner-inject flex-1 py-2 bg-neon-green hover:bg-neon-green/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(16,185,129,0.2)]"
                                 data-id="4">注入 (Inject)</button>
@@ -1285,6 +1314,32 @@
             </div>
         </div>
     </div>
+    <!-- Collection Rewards Modal (Centered) -->
+    <div id="collection-rewards-modal"
+        class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-300">
+        <div id="collection-rewards-backdrop"
+            class="absolute inset-0 bg-black/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+        </div>
+        <div id="collection-rewards-list"
+            class="relative w-full max-w-md bg-vibe-card/95 backdrop-blur-3xl border border-white/30 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] p-6 scale-90 opacity-0 transition-all duration-300">
+            <div class="flex justify-between items-center mb-6 border-b border-white/20 pb-4">
+                <div class="text-sm font-bold text-white tracking-widest uppercase flex items-center gap-3">
+                    <span class="text-2xl">🍦</span> 收藏活動全獎勵清單
+                </div>
+                <button id="btn-close-collection-rewards" class="text-gray-500 hover:text-white transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div id="collection-rewards-content"
+                class="flex flex-col gap-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+                <!-- Items via JS -->
+            </div>
+        </div>
+    </div>
+
     <script src="scripts/script.js"></script>
 </body>
 
