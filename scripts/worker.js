@@ -157,6 +157,10 @@ self.onmessage = function (e) {
             init2048State();
 
             sendUpdate();
+
+            // [NEW] Auto generate icons on game start based on config
+            const initialCount = (state.systemConfig && state.systemConfig.Collect_Item_Count) ? state.systemConfig.Collect_Item_Count : 10;
+            generateExtraObjects(initialCount);
             break;
 
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI

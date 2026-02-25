@@ -171,7 +171,8 @@ const systemConfig = {
     Spin_CD: 0.25,    // Default 250ms
     UI_Px: [10, 10, 10, 16], // Top, Bottom, Left, Right
     Collect_UI_Name: "收藏活動",
-    AIRPORT_Value: 50
+    AIRPORT_Value: 50,
+    Collect_Item_Count: 10 // [NEW] Default count
 };
 
 // DOM Elements
@@ -620,6 +621,7 @@ async function initGame() {
                             if (type === 'Spin_CD') systemConfig.Spin_CD = val;
                             if (type === 'Collect_Item_Weight') systemConfig.Collect_Item_Weight = val;
                             if (type === 'Collect_Item_Value') systemConfig.Collect_Item_Value = val;
+                            if (type === 'Collect_Item_Count') systemConfig.Collect_Item_Count = val;
                             if (type === 'Roulette_Token_Value') systemConfig.Roulette_Token_Value = val;
                         }
                     }
@@ -631,6 +633,9 @@ async function initGame() {
 
             console.log("System Config Loaded:", systemConfig);
             state.systemConfig = systemConfig;
+
+            // [NEW] Update UI input for extra count
+            if (ui.extraCount) ui.extraCount.value = systemConfig.Collect_Item_Count;
         }
     } catch (e) {
         console.warn("System Config Load Failed, using defaults", e);
@@ -695,8 +700,8 @@ async function initGame() {
     console.log("Worker Initialized");
     renderBoard(); // Initial Render
 
-    // [NEW] Auto Generate Icons
-    worker.postMessage({ type: 'GEN_EXTRA', payload: { count: 10 } });
+    // [NEW] Auto Generate Icons based on config
+    worker.postMessage({ type: 'GEN_EXTRA', payload: { count: systemConfig.Collect_Item_Count || 10 } });
 
     // 4. Load Tournament Data
     try {
