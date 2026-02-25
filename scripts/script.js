@@ -2015,6 +2015,7 @@ enableDraggable(document.getElementById('activity-panel'), document.getElementBy
 enableDraggable(document.getElementById('tournament-panel'), document.getElementById('tournament-panel'));
 enableDraggable(document.getElementById('roulette-side-panel'), document.getElementById('roulette-side-panel'));
 enableDraggable(document.getElementById('2048-side-panel'), document.getElementById('2048-side-panel'));
+enableDraggable(document.getElementById('partner-side-panel'), document.getElementById('partner-side-panel'));
 
 // --- Tournament Reset ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
@@ -2139,6 +2140,40 @@ function enableDraggable(el, handle) {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     }
+}
+
+
+function resetDraggablePositions() {
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.position = '';
+            el.style.left = '';
+            el.style.top = '';
+            el.style.right = '';
+            el.style.bottom = '';
+            el.style.margin = '';
+            el.style.zIndex = '';
+        }
+    });
+
+    // Also reset the board if it was moved
+    const board = document.getElementById('board-grid');
+    if (board) {
+        board.style.transform = '';
+        // Reset the tracker in script.js to match
+        if (typeof boardOffsets !== 'undefined') {
+            boardOffsets.x = 0;
+            boardOffsets.y = 0;
+        }
+    }
+}
+
+// Bind Reset Button
+const btnResetUI = document.getElementById('btn-reset-ui');
+if (btnResetUI) {
+    btnResetUI.addEventListener('click', resetDraggablePositions);
 }
 
 // [NEW] Modal function for Dice Stats
