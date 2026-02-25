@@ -398,7 +398,7 @@ function update2048MaxLevel(level) {
                     state.dice += rewardRow.dice;
                     state.totalEarnedDice += rewardRow.dice;
                     state.game2048.stats.totalDiceEarned += rewardRow.dice;
-                    state.earnedDiceBreakdown['2048首次合成'] = (state.earnedDiceBreakdown['2048首次合成'] || 0) + rewardRow.dice;
+                    state.earnedDiceBreakdown['2048活動'] = (state.earnedDiceBreakdown['2048活動'] || 0) + rewardRow.dice;
                     recordLog({
                         turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
                         current_balance: state.money, detail: `2048 Lv.${level} 獎勵：骰子 ${rewardRow.dice}`
@@ -437,7 +437,7 @@ function check2048Milestones() {
                 state.dice += row.dice;
                 state.totalEarnedDice += row.dice;
                 state.game2048.stats.totalDiceEarned += row.dice;
-                state.earnedDiceBreakdown['2048積分達標'] = (state.earnedDiceBreakdown['2048積分達標'] || 0) + row.dice;
+                state.earnedDiceBreakdown['2048活動'] = (state.earnedDiceBreakdown['2048活動'] || 0) + row.dice;
                 recordLog({
                     turn: state.turn, position: state.position, event: "DICE", delta_gold: 0,
                     current_balance: state.money, detail: `2048 積分獎勵：骰子 ${row.dice}`
@@ -1259,6 +1259,10 @@ function handlePartnerInject(towerId) {
 
     tower.myScore += score;
     pg.stats.totalGenerated += score;
+
+    // Track Dice Statistics
+    state.totalSpentDice += cost;
+    state.spentDiceBreakdown['合作伙伴活動'] = (state.spentDiceBreakdown['合作伙伴活動'] || 0) + cost;
 
     sendUpdate();
 }
