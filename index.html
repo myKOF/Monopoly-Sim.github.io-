@@ -417,6 +417,32 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Partner Game Panel -->
+            <div id="partner-side-panel"
+                class="w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl relative overflow-hidden group hover:border-cyan-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none mt-2">
+                <!-- Glow Effect -->
+                <div
+                    class="absolute -left-10 -top-10 w-24 h-24 bg-cyan-500/20 blur-[40px] rounded-full group-hover:bg-cyan-500/30 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center relative z-10 mb-1">
+                    <h2 class="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
+                        <span class="text-base">🤝</span>
+                        <div>
+                            <div>合作伙伴</div>
+                            <div class="text-[8px] text-gray-400 leading-none">Partner Game</div>
+                        </div>
+                    </h2>
+                </div>
+
+                <div class="relative z-10">
+                    <button id="btn-partner-open"
+                        class="w-full py-1.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black text-xs font-bold rounded shadow-lg shadow-cyan-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <span>開啟活動 (Open)</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Right Sidebar: Stats & Logs -->
@@ -919,7 +945,338 @@
         </div>
     </div>
 
+
+    <!-- Partner Game Modal -->
+    <!-- Partner Game Modal -->
+    <div id="partner-modal"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+        <div
+            class="bg-vibe-dark/95 border border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.3)] p-8 w-[1140px] h-[750px] flex gap-8 items-stretch rounded-2xl relative pointer-events-auto">
+            <!-- Close Button -->
+            <button id="btn-close-partner"
+                class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-20">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+
+            <!-- Left: Tower Cards -->
+            <div class="flex-1 border-r border-white/10 pr-6 overflow-y-auto custom-scrollbar">
+                <h2 class="text-2xl font-bold text-neon-blue tracking-wider mb-2 flex items-center gap-3">
+                    <span class="text-2xl">🤝</span>
+                    <span>合作伙伴大賽</span>
+                    <span
+                        class="text-[10px] bg-neon-blue/20 border border-neon-blue/40 px-2 py-0.5 rounded text-neon-blue uppercase tracking-widest ml-auto font-mono">Live
+                        Event</span>
+                </h2>
+                <p class="text-[10px] text-gray-400 mb-6 font-mono tracking-wide">與夥伴共同建設地標，贏取最終大獎！(40,000分達成)</p>
+
+                <!-- Towers Grid -->
+                <div class="grid grid-cols-2 gap-8 mt-4">
+                    <!-- Partner Card 1 -->
+                    <div
+                        class="partner-card bg-black/40 border border-white/5 p-6 rounded-xl flex flex-col gap-5 relative">
+                        <div class="flex justify-between items-center z-10">
+                            <span class="text-xs text-gray-300 font-bold flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-neon-blue shadow-[0_0_8px_rgba(59,130,246,0.5)]">
+                                </div> 隊員 1
+                            </span>
+                            <div class="flex flex-col items-end">
+                                <span class="text-[9px] text-gray-500 uppercase font-mono">Progress</span>
+                                <span id="tower-score-label-1"
+                                    class="text-xs text-neon-blue font-mono font-bold">0</span>
+                            </div>
+                        </div>
+                        <div class="h-6 rounded-full border border-white/10 relative shadow-inner">
+                            <div class="absolute inset-0 bg-gray-900/80 rounded-full overflow-hidden">
+                                <div id="tower-bar-1"
+                                    class="h-full bg-gradient-to-r from-neon-blue to-neon-purple w-0 transition-all duration-700 shadow-[0_0_15px_rgba(59,130,246,0.4)] relative">
+                                    <div class="absolute inset-0 bg-white/10 animate-[shimmer_2s_infinite]"></div>
+                                </div>
+                            </div>
+                            <!-- Milestone Markers Container -->
+                            <div id="milestones-1" class="absolute inset-0 pointer-events-none"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[9px] font-mono">
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">我的貢獻</div>
+                                <div id="tower-my-score-1" class="text-white font-bold leading-none text-xs">0</div>
+                            </div>
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">隊員貢獻</div>
+                                <div id="tower-partner-score-1" class="text-white font-bold leading-none text-xs">0
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                class="btn-partner-inject flex-1 py-2 bg-neon-blue hover:bg-neon-blue/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(59,130,246,0.2)]"
+                                data-id="1">注入 (Inject)</button>
+                            <button
+                                class="btn-partner-join px-4 py-2 text-[10px] rounded-lg transition-all uppercase tracking-tighter"
+                                data-id="1">加入</button>
+                        </div>
+                    </div>
+
+                    <!-- Partner Card 2 -->
+                    <div
+                        class="partner-card bg-black/40 border border-white/5 p-6 rounded-xl flex flex-col gap-5 relative">
+                        <div class="flex justify-between items-center z-10">
+                            <span class="text-xs text-gray-300 font-bold flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-neon-purple shadow-[0_0_8px_rgba(139,92,246,0.5)]">
+                                </div> 隊員 2
+                            </span>
+                            <div class="flex flex-col items-end">
+                                <span class="text-[9px] text-gray-500 uppercase font-mono">Progress</span>
+                                <span id="tower-score-label-2"
+                                    class="text-xs text-neon-purple font-mono font-bold">0</span>
+                            </div>
+                        </div>
+                        <div class="h-6 rounded-full border border-white/10 relative shadow-inner">
+                            <div class="absolute inset-0 bg-gray-900/80 rounded-full overflow-hidden">
+                                <div id="tower-bar-2"
+                                    class="h-full bg-gradient-to-r from-neon-purple to-neon-pink w-0 transition-all duration-700 shadow-[0_0_15px_rgba(139,92,246,0.4)] relative">
+                                    <div class="absolute inset-0 bg-white/10 animate-[shimmer_2s_infinite]"></div>
+                                </div>
+                            </div>
+                            <!-- Milestone Markers Container -->
+                            <div id="milestones-2" class="absolute inset-0 pointer-events-none"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[9px] font-mono">
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">我的貢獻</div>
+                                <div id="tower-my-score-2" class="text-white font-bold leading-none text-xs">0</div>
+                            </div>
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">隊員貢獻</div>
+                                <div id="tower-partner-score-2" class="text-white font-bold leading-none text-xs">0
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                class="btn-partner-inject flex-1 py-2 bg-neon-purple hover:bg-neon-purple/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(139,92,246,0.2)]"
+                                data-id="2">注入 (Inject)</button>
+                            <button
+                                class="btn-partner-join px-4 py-2 text-[10px] rounded-lg transition-all uppercase tracking-tighter"
+                                data-id="2">加入</button>
+                        </div>
+                    </div>
+
+                    <!-- Partner Card 3 -->
+                    <div
+                        class="partner-card bg-black/40 border border-white/5 p-6 rounded-xl flex flex-col gap-5 relative">
+                        <div class="flex justify-between items-center z-10">
+                            <span class="text-xs text-gray-300 font-bold flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-neon-pink shadow-[0_0_8px_rgba(236,72,153,0.5)]">
+                                </div> 隊員 3
+                            </span>
+                            <div class="flex flex-col items-end">
+                                <span class="text-[9px] text-gray-500 uppercase font-mono">Progress</span>
+                                <span id="tower-score-label-3"
+                                    class="text-xs text-neon-pink font-mono font-bold">0</span>
+                            </div>
+                        </div>
+                        <div class="h-6 rounded-full border border-white/10 relative shadow-inner">
+                            <div class="absolute inset-0 bg-gray-900/80 rounded-full overflow-hidden">
+                                <div id="tower-bar-3"
+                                    class="h-full bg-gradient-to-r from-neon-pink to-orange-500 w-0 transition-all duration-700 shadow-[0_0_15px_rgba(236,72,153,0.4)] relative">
+                                    <div class="absolute inset-0 bg-white/10 animate-[shimmer_2s_infinite]"></div>
+                                </div>
+                            </div>
+                            <!-- Milestone Markers Container -->
+                            <div id="milestones-3" class="absolute inset-0 pointer-events-none"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[9px] font-mono">
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">我的貢獻</div>
+                                <div id="tower-my-score-3" class="text-white font-bold leading-none text-xs">0</div>
+                            </div>
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">隊員貢獻</div>
+                                <div id="tower-partner-score-3" class="text-white font-bold leading-none text-xs">0
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                class="btn-partner-inject flex-1 py-2 bg-neon-pink hover:bg-neon-pink/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(236,72,153,0.2)]"
+                                data-id="3">注入 (Inject)</button>
+                            <button
+                                class="btn-partner-join px-4 py-2 text-[10px] rounded-lg transition-all uppercase tracking-tighter"
+                                data-id="3">加入</button>
+                        </div>
+                    </div>
+
+                    <!-- Partner Card 4 -->
+                    <div
+                        class="partner-card bg-black/40 border border-white/5 p-6 rounded-xl flex flex-col gap-5 relative">
+                        <div class="flex justify-between items-center z-10">
+                            <span class="text-xs text-gray-300 font-bold flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-neon-green shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                                </div> 隊員 4
+                            </span>
+                            <div class="flex flex-col items-end">
+                                <span class="text-[9px] text-gray-500 uppercase font-mono">Progress</span>
+                                <span id="tower-score-label-4"
+                                    class="text-xs text-neon-green font-mono font-bold">0</span>
+                            </div>
+                        </div>
+                        <div class="h-6 rounded-full border border-white/10 relative shadow-inner">
+                            <div class="absolute inset-0 bg-gray-900/80 rounded-full overflow-hidden">
+                                <div id="tower-bar-4"
+                                    class="h-full bg-gradient-to-r from-neon-green to-blue-400 w-0 transition-all duration-700 shadow-[0_0_15px_rgba(16,185,129,0.4)] relative">
+                                    <div class="absolute inset-0 bg-white/10 animate-[shimmer_2s_infinite]"></div>
+                                </div>
+                            </div>
+                            <!-- Milestone Markers Container -->
+                            <div id="milestones-4" class="absolute inset-0 pointer-events-none"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[9px] font-mono">
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">我的貢獻</div>
+                                <div id="tower-my-score-4" class="text-white font-bold leading-none text-xs">0</div>
+                            </div>
+                            <div class="bg-black/20 p-1.5 rounded border border-white/5">
+                                <div class="text-gray-500 mb-0.5 text-[8px]">隊員貢獻</div>
+                                <div id="tower-partner-score-4" class="text-white font-bold leading-none text-xs">0
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                class="btn-partner-inject flex-1 py-2 bg-neon-green hover:bg-neon-green/80 text-white text-[10px] font-black rounded-lg transition-all active:scale-95 shadow-[0_4px_15px_rgba(16,185,129,0.2)]"
+                                data-id="4">注入 (Inject)</button>
+                            <button
+                                class="btn-partner-join px-4 py-2 text-[10px] rounded-lg transition-all uppercase tracking-tighter"
+                                data-id="4">加入</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Stats & Controls -->
+            <div class="w-64 flex flex-col gap-4">
+                <div class="bg-black/40 border border-white/5 p-4 rounded-xl">
+                    <h3
+                        class="text-[10px] text-neon-pink font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <span>📊</span> 活動統計
+                    </h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-400 font-medium">代幣餘量</span>
+                            <div
+                                class="flex items-center gap-1 bg-black/60 px-3 py-1.5 rounded border border-white/10 shadow-inner">
+                                <input type="number" id="partner-tokens"
+                                    class="w-16 bg-transparent outline-none border-none text-right text-white font-bold font-mono"
+                                    value="0">
+                                <span class="text-[10px] text-yellow-500">🪙</span>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-500 font-medium text-[9px]">代幣總投入 (Total Tokens)</span>
+                                <span id="stat-partner-total-tokens" class="text-gray-300 font-mono">0</span>
+                            </div>
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-500 font-medium text-[9px]">已消耗 (Spent)</span>
+                                <span id="stat-partner-spent-tokens" class="text-neon-pink font-mono">-0</span>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-white/10 flex flex-col gap-1">
+                            <span class="text-[9px] text-gray-500 font-medium">活動累計積分 (Combined Score)</span>
+                            <div class="flex justify-between items-baseline">
+                                <span id="stat-partner-total-score"
+                                    class="text-3xl font-bold text-neon-blue font-mono tracking-tighter drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">0</span>
+                                <span class="text-[10px] text-neon-blue/60 font-mono ml-1">PTS</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 bg-black/40 border border-white/5 p-4 rounded-xl flex flex-col min-h-0">
+                    <h3
+                        class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span>👥</span> 隊員即時數據
+                    </h3>
+                    <div class="space-y-2 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                        <div
+                            class="flex justify-between items-center text-[10px] p-2 bg-gradient-to-r from-neon-blue/10 to-transparent rounded border border-neon-blue/20">
+                            <span class="text-white font-bold">我自己 (Player)</span>
+                            <span class="text-neon-blue text-[9px] animate-pulse">Online</span>
+                        </div>
+                        <div class="flex flex-col gap-1 p-2 bg-white/5 rounded border border-white/5">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-400">隊員 1</span>
+                                <span id="stat-member-score-1" class="text-gray-300 font-mono">0 (0)</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1 p-2 bg-white/5 rounded border border-white/5">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-400">隊員 2</span>
+                                <span id="stat-member-score-2" class="text-gray-300 font-mono">0 (0)</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1 p-2 bg-white/5 rounded border border-white/5">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-400">隊員 3</span>
+                                <span id="stat-member-score-3" class="text-gray-300 font-mono">0 (0)</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1 p-2 bg-white/5 rounded border border-white/5">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="text-gray-400">隊員 4</span>
+                                <span id="stat-member-score-4" class="text-gray-300 font-mono">0 (0)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Multiplier Selector -->
+                <div class="relative mt-2">
+                    <button id="btn-partner-multiplier-toggle"
+                        class="w-full py-3 bg-gradient-to-r from-vibe-card to-vibe-dark border border-white/10 hover:border-neon-blue/50 rounded-xl flex items-center justify-center gap-3 text-xs font-bold transition-all group active:scale-95 shadow-xl relative overflow-hidden">
+                        <div
+                            class="absolute inset-0 bg-neon-blue/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        </div>
+                        <span
+                            class="text-gray-400 group-hover:text-white transition-colors uppercase tracking-widest text-[10px]">注入倍率
+                            Multiplier</span>
+                        <div class="h-4 w-px bg-white/10 z-10"></div>
+                        <span id="current-partner-multiplier"
+                            class="text-neon-blue text-sm font-mono drop-shadow-[0_0_5px_rgba(59,130,246,0.3)] z-10">x1</span>
+                    </button>
+                    <!-- Dropdown -->
+                    <div id="partner-multiplier-dropdown"
+                        class="hidden absolute bottom-full left-0 right-0 mb-3 bg-vibe-dark/95 border border-white/10 rounded-xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] z-50 backdrop-blur-md">
+                        <div class="grid grid-cols-3 gap-1 p-2">
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/5 border border-white/5"
+                                data-val="1">x1</button>
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/5 border border-white/5"
+                                data-val="5">x5</button>
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/5 border border-white/5"
+                                data-val="10">x10</button>
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/5 border border-white/5"
+                                data-val="20">x20</button>
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/5 border border-white/5"
+                                data-val="50">x50</button>
+                            <button
+                                class="mult-btn py-2.5 text-xs font-mono hover:bg-neon-blue/20 hover:text-white transition-all rounded bg-white/10 border border-neon-blue/30 text-neon-blue"
+                                data-val="100">x100</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="scripts/script.js"></script>
 </body>
+
 
 </html>

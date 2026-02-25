@@ -28,7 +28,14 @@ let state = {
     systemConfig: {},
     roulette: { level: 1, drawnCounts: [], config: {}, integral: { score: 0, level: 1 }, stats: { totalCoin: 0, totalGem: 0, totalDice: 0, landings: {}, tokensPerLevel: {} } },
     tournament: { integralConfig: [] },
-    game2048: null // Initialize properly in START_GAME or INIT
+    game2048: null, // Initialize properly in START_GAME or INIT
+    partnerGame: {
+        tokens: 0,
+        towers: [],
+        multiplier: 1,
+        config: [],
+        stats: { totalSpent: 0, totalGenerated: 0 }
+    }
 };
 
 // ... (Existing message handling) ...
@@ -126,6 +133,7 @@ self.onmessage = function (e) {
 
             state.isRunning = false;
             init2048State();
+            initPartnerGameState(); // [NEW]
             // No sendUpdate here, as START_GAME will follow
             break;
 
@@ -161,6 +169,8 @@ self.onmessage = function (e) {
             // [NEW] Auto generate icons on game start based on config
             const initialCount = (state.systemConfig && state.systemConfig.Collect_Item_Count) ? state.systemConfig.Collect_Item_Count : 10;
             generateExtraObjects(initialCount);
+
+            initPartnerGameState(); // [NEW] Reset partner game on start
             break;
 
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
@@ -292,8 +302,27 @@ self.onmessage = function (e) {
                     }
                 }
             });
+            break;
         case 'MOVE_2048':
             handle2048Event(payload);
+            break;
+        case 'UPDATE_PARTNER_CONFIG':
+            if (!state.partnerGame) initPartnerGameState();
+            state.partnerGame.config = payload.config || [];
+            break;
+        case 'UPDATE_PARTNER_DATA':
+            if (!state.partnerGame) initPartnerGameState();
+            if (payload.tokens !== undefined) state.partnerGame.tokens = payload.tokens;
+            if (payload.multiplier !== undefined) state.partnerGame.multiplier = payload.multiplier;
+            sendUpdate();
+            break;
+        case 'PARTNER_GAME_JOIN':
+            if (!state.partnerGame) initPartnerGameState();
+            handlePartnerJoin(payload.towerId);
+            break;
+        case 'PARTNER_GAME_INJECT':
+            if (!state.partnerGame) initPartnerGameState();
+            handlePartnerInject(payload.towerId);
             break;
     }
 };
@@ -976,7 +1005,8 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             stats: state.roulette.stats // Send stats 
         },
         tournamentBonus: state.pendingTournamentBonus || 0, // [NEW] Pass tournament points
-        game2048: state.game2048
+        game2048: state.game2048,
+        partnerGame: state.partnerGame // [NEW]
     };
 
     // Reset pending bonus after sending
@@ -1172,7 +1202,105 @@ function sendRouletteUpdate(spinResultItem) {
                 integral: state.roulette.integral, // [NEW] Integral state
                 stats: state.roulette.stats, // [NEW] Send stats immediately
                 lastSpinResult: spinResultItem // [NEW] Pass result for animation
-            }
+            },
+            partnerGame: state.partnerGame // [NEW]
         }
     });
 }
+
+// [NEW] Partner Game Core Implementation
+function initPartnerGameState() {
+    const initialTokens = state.systemConfig.Partner_Game_Token ? parseInt(state.systemConfig.Partner_Game_Token) : 10000;
+
+    state.partnerGame = {
+        tokens: initialTokens,
+        multiplier: 1,
+        towers: [
+            { id: 1, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
+            { id: 2, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
+            { id: 3, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
+            { id: 4, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 }
+        ],
+        stats: { totalSpent: 0, totalGenerated: 0 }
+    };
+    sendUpdate();
+}
+
+function handlePartnerJoin(towerId) {
+    const tower = state.partnerGame.towers.find(t => t.id === towerId);
+    if (tower && !tower.joined) {
+        tower.joined = true;
+        tower.nextBotTick = Date.now() + (Math.random() * 5000);
+        recordLog({
+            turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: 0, current_balance: state.money,
+            detail: `成功加入隊伍 ${towerId}`
+        });
+        sendUpdate();
+    }
+}
+
+function handlePartnerInject(towerId) {
+    const pg = state.partnerGame;
+    const tower = pg.towers.find(t => t.id === towerId);
+    const mult = pg.multiplier || 1;
+    const cost = mult;
+
+    const towerMilestones = pg.config ? pg.config.filter(m => m.partner == towerId) : [];
+    const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 30000;
+
+    if (!tower || pg.tokens < cost || (tower.myScore + tower.partnerScore) >= maxScore) return;
+
+    pg.tokens -= cost;
+    pg.stats.totalSpent += cost;
+
+    const range = parseRange(state.systemConfig.Partner_Game_TokenValue || "{10,100}");
+    const baseScore = Math.floor(getRandomRange(range[0], range[1]));
+    const score = baseScore * mult;
+
+    tower.myScore += score;
+    pg.stats.totalGenerated += score;
+
+    sendUpdate();
+}
+
+function tickPartnerBots() {
+    if (!state.partnerGame || !state.partnerGame.towers) return;
+    const now = Date.now();
+    let updated = false;
+
+    state.partnerGame.towers.forEach(tower => {
+        const towerMilestones = state.partnerGame.config ? state.partnerGame.config.filter(m => m.partner == tower.id) : [];
+        const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 30000;
+
+        if (!tower.joined || (tower.myScore + tower.partnerScore) >= maxScore) return;
+
+        if (now >= tower.nextBotTick) {
+            const range = parseRange(state.systemConfig.Partner_Game_PartnerValue || "{15,120}");
+            const score = Math.floor(getRandomRange(range[0], range[1]));
+
+            tower.partnerScore += score;
+            tower.partnerTokens += 1;
+
+            const timeRange = parseRange(state.systemConfig.Partner_Game_PartnerValueTime || "{5,15}");
+            const cd = getRandomRange(timeRange[0], timeRange[1]);
+            tower.nextBotTick = now + (cd * 1000);
+            updated = true;
+        }
+    });
+
+    if (updated) sendUpdate();
+}
+
+function parseRange(str) {
+    if (Array.isArray(str)) return str;
+    if (typeof str !== 'string') return [0, 0];
+    const clean = str.replace(/[{}" ]/g, '');
+    const parts = clean.split(',').map(n => parseFloat(n));
+    return parts.length === 2 ? parts : [0, 0];
+}
+
+function getRandomRange(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+setInterval(tickPartnerBots, 2000); // Check every 2 seconds

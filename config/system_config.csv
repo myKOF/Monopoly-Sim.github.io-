@@ -14,3 +14,7 @@
 13,2048_Activity_RecoverPoint,1,2048自然恢復體力值
 14,2048_Activity_RecoverTime,2.5,2048自然恢復體力時間間隔(秒)
 15,2048_Activity_ItemRecoverPoint,20,2048道具恢復體力值
+16,Partner_Game_Token,10000,合作伙伴初始代幣量
+17,Partner_Game_TokenValue,"{10,100}",合作伙伴代幣轉分數值
+18,Partner_Game_PartnerValue,"{15,120}",合作伙伴機器人分數
+19,Partner_Game_PartnerValueTime,"{5,15}",合作伙伴機器人增加分數週期

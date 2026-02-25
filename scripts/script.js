@@ -5,6 +5,7 @@ let collectionConfig = [];
 let rouletteConfig = {};
 let rouletteIntegralConfig = [];
 let rouletteInterval = null;
+let partnerGameConfig = []; // [NEW]
 
 // debug: visual error logger (Keep this)
 window.onerror = function (msg, url, line, col, error) {
@@ -91,6 +92,25 @@ function parseRouletteCSV(csvText) {
     return config;
 }
 
+// [NEW] Parse Partner Game CSV
+function parsePartnerGameCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const p = line.split(',');
+        if (p.length < 8) return null;
+        return {
+            id: parseInt(p[0].trim()),
+            partner: parseInt(p[1].trim()),
+            level: parseInt(p[2].trim()),
+            required: parseInt(p[3].trim()),
+            coin: parseInt(p[4].trim()) || 0,
+            gem: parseInt(p[5].trim()) || 0,
+            dice: parseInt(p[6].trim()) || 0,
+            desc: p[7].trim()
+        };
+    }).filter(x => x);
+}
+
 // --- WORKER INTEGRATION ---
 let worker;
 try {
@@ -163,7 +183,18 @@ let state = {
     totalSpentDice: 0,
     earnedDiceBreakdown: {},
     spentDiceBreakdown: {},
-    systemConfig: {} // [FIX] Initialize systemConfig in main thread state
+    systemConfig: {}, // [FIX] Initialize systemConfig in main thread state
+    partnerGame: {
+        tokens: 0,
+        towers: [
+            { id: 1, myScore: 0, partnerScore: 0, joined: false, partnerId: null },
+            { id: 2, myScore: 0, partnerScore: 0, joined: false, partnerId: null },
+            { id: 3, myScore: 0, partnerScore: 0, joined: false, partnerId: null },
+            { id: 4, myScore: 0, partnerScore: 0, joined: false, partnerId: null }
+        ],
+        multiplier: 1,
+        stats: { totalSpent: 0, totalGenerated: 0 }
+    }
 };
 
 const systemConfig = {
@@ -199,8 +230,6 @@ const ui = {
     colTarget: document.getElementById('collection-target'),
     colBar: document.getElementById('collection-bar'),
     colReward: document.getElementById('collection-reward-desc'),
-    btnStop: document.getElementById('btn-stop'),
-    autoProgress: document.getElementById('auto-progress'),
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
     btnFast: document.getElementById('btn-fast'),
@@ -239,9 +268,20 @@ const ui = {
     stat2048Dice: document.getElementById('2048-stat-dice'),
     stat2048Gems: document.getElementById('2048-stat-gems'),
     stat2048Gold: document.getElementById('2048-stat-gold'),
+
+    // [NEW] Partner Game DOM Elements
+    btnPartnerOpen: document.getElementById('btn-partner-open'),
+    modalPartner: document.getElementById('partner-modal'),
+    btnClosePartner: document.getElementById('btn-close-partner'),
+    inputPartnerTokens: document.getElementById('partner-tokens'),
+    btnPartnerMultToggle: document.getElementById('btn-partner-multiplier-toggle'),
+    partnerMultDropdown: document.getElementById('partner-multiplier-dropdown'),
+    dispPartnerCurrentMult: document.getElementById('current-partner-multiplier'),
+    statPartnerTotalTokens: document.getElementById('stat-partner-total-tokens'),
+    statPartnerSpentTokens: document.getElementById('stat-partner-spent-tokens'),
+    statPartnerTotalScore: document.getElementById('stat-partner-total-score')
 };
 
-// Fallback Config
 const FALLBACK_DATA = [
     { id: 0, icon: '🚩', type: 'GO', name: 'GO', price: 2000, color: 'text-neon-pink font-black', probability: 1 },
     { id: 1, icon: '💰', type: 'SMALL_GOLD', name: '小獎勵', price: 500, color: 'text-yellow-300', probability: 1 },
@@ -286,6 +326,11 @@ worker.onmessage = function (e) {
         if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
         if (payload.gems !== undefined) {
             state.gems = payload.gems;
+        }
+
+        // [NEW] Partner Game State Sync
+        if (payload.partnerGame) {
+            state.partnerGame = payload.partnerGame;
         }
 
         // [NEW] 2048 State Sync
@@ -584,12 +629,6 @@ async function initGame() {
             // Parse manual csv
             const lines = text.trim().split('\n').slice(1);
             lines.forEach(line => {
-                // Simple split by comma might break if value contains comma (like the array)
-                // But our format is {a,b,c,d} inside one column? CSV standard says quotes.
-                // Let's assume user writes "{10,10,5,5}" without quotes, so split(',') will split it.
-                // We need a smarter regex or just handle the array case.
-
-                // [FIX] Trim line to remove potential \r from Windows CRLF
                 line = line.trim();
                 if (!line) return;
 
@@ -597,32 +636,19 @@ async function initGame() {
                 const match = line.match(/^(\d+),([^,]+),("?\{[^}]+\}"?|[^,]+),(.+)$/);
 
                 if (match) {
-                    const type = match[2].trim(); // Column 2: Type
-                    let value = match[3].trim();  // Column 3: Value
+                    const type = match[2].trim();
+                    let value = match[3].trim();
 
                     if (value.startsWith('{') || value.startsWith('"{')) {
                         // Array parsing
-                        value = value.replace(/^"|"$|{|}/g, ''); // Remove quotes and braces
-                        const nums = value.split(',').map(n => parseFloat(n.trim()));
-                        if (nums.length === 4 && type === 'UI_Px') {
-                            systemConfig.UI_Px = nums;
-                        } else if (type === 'Roulette_Time') {
-                            systemConfig.Roulette_Time = nums;
-                        }
+                        value = value.replace(/^"|"$|{|}/g, '');
+                        systemConfig[type] = value.split(',').map(n => parseFloat(n.trim()));
                     } else {
-                        // Check if it's the UI Name (String)
-                        if (type === 'Collect_UI_Name') {
-                            systemConfig.Collect_UI_Name = value.trim();
-                        } else if (type === 'AIRPORT_Value') {
-                            systemConfig.AIRPORT_Value = parseFloat(value);
+                        // Numeric or String parsing
+                        if (isNaN(parseFloat(value))) {
+                            systemConfig[type] = value.trim();
                         } else {
-                            const val = parseFloat(value);
-                            if (type === 'Target_Speed') systemConfig.Target_Speed = val;
-                            if (type === 'Spin_CD') systemConfig.Spin_CD = val;
-                            if (type === 'Collect_Item_Weight') systemConfig.Collect_Item_Weight = val;
-                            if (type === 'Collect_Item_Value') systemConfig.Collect_Item_Value = val;
-                            if (type === 'Collect_Item_Count') systemConfig.Collect_Item_Count = val;
-                            if (type === 'Roulette_Token_Value') systemConfig.Roulette_Token_Value = val;
+                            systemConfig[type] = parseFloat(value);
                         }
                     }
                 }
@@ -693,9 +719,29 @@ async function initGame() {
             rouletteConfig: rouletteConfig, // [NEW] Pass roulette config
             rouletteIntegralConfig: rouletteIntegralConfig, // [NEW] Pass roulette integral config
             config2048: config2048,
-            config2048Integral: config2048Integral
+            config2048Integral: config2048Integral,
+            partnerGameConfig: partnerGameConfig // [NEW]
         }
     });
+
+    // 6. Load Partner Game Config
+    try {
+        const resPartner = await fetch('./config/partner_game.csv');
+        if (resPartner.ok) {
+            const text = await resPartner.text();
+            partnerGameConfig = parsePartnerGameCSV(text);
+            state.partnerGameConfig = partnerGameConfig;
+            console.log("Partner Game Config Loaded:", partnerGameConfig);
+
+            // Re-send INIT if already sent, or just wait for START_GAME
+            worker.postMessage({
+                type: 'UPDATE_PARTNER_CONFIG',
+                payload: { config: partnerGameConfig }
+            });
+        }
+    } catch (e) {
+        console.warn("Partner Game Config Load Failed", e);
+    }
 
     console.log("Worker Initialized");
     renderBoard(); // Initial Render
@@ -791,22 +837,22 @@ ui.btnGenExtra.addEventListener('click', () => {
     worker.postMessage({ type: 'GEN_EXTRA', payload: { count } });
 });
 
+
+// Fast Sim Handler
 ui.btnFast.addEventListener('click', () => {
     const count = parseInt(ui.autoCount.value);
-    // "Lightning Mode" -> START_FAST_SIM
-    // UI handling for Fast Sim
     ui.btnFast.disabled = true;
     ui.btnAuto.disabled = true;
     ui.btnRoll.disabled = true;
-
     worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
 });
+
 
 if (ui.btnResetStats) {
     ui.btnResetStats.addEventListener('click', () => {
         if (confirm("確定要重置所有統計數據嗎？ (Reset Stats?)")) {
             worker.postMessage({ type: 'RESET_STATS' });
-            state.tileVisits = []; // Optimistic clear
+            state.tileVisits = [];
             updateStatsUI();
         }
     });
@@ -817,7 +863,6 @@ if (btnResetDiceStats) {
     btnResetDiceStats.addEventListener('click', () => {
         if (confirm("確定要重置骰子統計嗎？ (Reset Dice Stats?)")) {
             worker.postMessage({ type: 'RESET_DICE_STATS' });
-            // Optimistic reset
             state.totalEarnedDice = 0;
             state.totalSpentDice = 0;
             state.earnedDiceBreakdown = {};
@@ -1545,6 +1590,126 @@ function renderBoard() {
     }
 }
 
+// [NEW] Render Partner Game
+function renderPartnerGame() {
+    if (!state.partnerGame) return;
+    const pg = state.partnerGame;
+
+    // Tokens
+    if (ui.inputPartnerTokens && document.activeElement !== ui.inputPartnerTokens) {
+        ui.inputPartnerTokens.value = pg.tokens;
+    }
+    if (ui.statPartnerTotalTokens) ui.statPartnerTotalTokens.textContent = (pg.tokens + (pg.stats ? pg.stats.totalSpent : 0)).toLocaleString();
+    if (ui.statPartnerSpentTokens) ui.statPartnerSpentTokens.textContent = (pg.stats ? pg.stats.totalSpent : 0).toLocaleString();
+
+    let totalScore = 0;
+    pg.towers.forEach((tower, idx) => {
+        const id = tower.id;
+        const myScore = tower.myScore || 0;
+        const pScore = tower.partnerScore || 0;
+        const currentTotal = myScore + pScore;
+        totalScore += currentTotal;
+
+        const towerMilestones = partnerGameConfig.filter(m => m.partner == id);
+        const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 40000;
+        const pct = Math.min(100, (currentTotal / maxScore) * 100);
+
+        const bar = document.getElementById(`tower-bar-${id}`);
+        const label = document.getElementById(`tower-score-label-${id}`);
+        const btnInject = document.querySelector(`.btn-partner-inject[data-id="${id}"]`);
+        const btnJoin = document.querySelector(`.btn-partner-join[data-id="${id}"]`);
+        const myScoreDisp = document.getElementById(`tower-my-score-${id}`);
+        const pScoreDisp = document.getElementById(`tower-partner-score-${id}`);
+        const statMemberScore = document.getElementById(`stat-member-score-${id}`);
+
+        if (bar) bar.style.width = `${pct}%`;
+        if (label) label.textContent = currentTotal.toLocaleString();
+        if (myScoreDisp) myScoreDisp.textContent = myScore.toLocaleString();
+        if (pScoreDisp) pScoreDisp.textContent = pScore.toLocaleString();
+        if (statMemberScore) statMemberScore.textContent = `${pScore.toLocaleString()} (${(tower.partnerTokens || 0).toLocaleString()})`;
+
+        if (btnJoin) {
+            if (tower.joined) {
+                btnJoin.textContent = "已加入";
+                btnJoin.classList.add('joined');
+            } else {
+                btnJoin.textContent = "加入";
+                btnJoin.classList.remove('joined');
+            }
+        }
+
+        if (btnInject) {
+            if (currentTotal >= maxScore) {
+                btnInject.classList.add('opacity-50', 'pointer-events-none');
+            } else {
+                btnInject.classList.remove('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        // Render Milestones
+        const milestonesContainer = document.getElementById(`milestones-${id}`);
+        if (milestonesContainer) {
+            milestonesContainer.innerHTML = '';
+            // Only use config for the specific partner (partner 1, 2, 3, 4)
+            // If the CSV has "partner" column, filter by it.
+            const towerMilestones = partnerGameConfig.filter(m => m.partner == id);
+            towerMilestones.forEach(m => {
+                const marker = document.createElement('div');
+                let mPct = (m.required / maxScore) * 100;
+                marker.className = 'milestone-marker';
+                if (currentTotal >= m.required) marker.classList.add('reached');
+
+                // Adjust last marker to not clip
+                if (mPct >= 100) {
+                    marker.style.right = '0';
+                    marker.style.left = 'auto';
+                } else {
+                    marker.style.left = `${mPct}%`;
+                }
+
+                // Add Score Label (Top)
+                const scoreLabel = document.createElement('div');
+                scoreLabel.className = 'milestone-score';
+                scoreLabel.textContent = m.required.toLocaleString();
+                marker.appendChild(scoreLabel);
+
+                // Add Reward Label (Bottom) + Tooltip
+                const rewardLabel = document.createElement('div');
+                rewardLabel.className = 'milestone-reward';
+
+                let icons = [];
+                let tip = [];
+                if (m.dice) { icons.push('🎲'); tip.push(`🎲${m.dice.toLocaleString()}`); }
+                if (m.gem) { icons.push('💎'); tip.push(`💎${m.gem.toLocaleString()}`); }
+                if (m.coin) { if (!icons.length) icons.push('💰'); tip.push(`💰${m.coin.toLocaleString()}`); }
+                if (m.desc) tip.push(m.desc);
+
+                rewardLabel.textContent = icons.join('');
+                rewardLabel.setAttribute('data-tip', tip.join(' '));
+
+                // Set alignment for edge tooltips
+                if (mPct > 80) {
+                    rewardLabel.setAttribute('data-align', 'right');
+                }
+
+                marker.appendChild(rewardLabel);
+
+                milestonesContainer.appendChild(marker);
+            });
+        }
+    });
+
+    if (ui.statPartnerTotalScore) ui.statPartnerTotalScore.textContent = totalScore.toLocaleString();
+
+    if (ui.dispPartnerCurrentMult) ui.dispPartnerCurrentMult.textContent = `x${pg.multiplier}`;
+    if (ui.partnerMultDropdown) {
+        ui.partnerMultDropdown.querySelectorAll('.mult-btn').forEach(btn => {
+            if (parseInt(btn.dataset.val) === pg.multiplier) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+    }
+}
+
 function updateUI() {
     ui.money.textContent = state.money.toLocaleString();
     ui.turn.textContent = state.turn;
@@ -1596,6 +1761,8 @@ function updateUI() {
     // [NEW] Update Gems
     const gemsEl = document.getElementById('display-gems');
     if (gemsEl) gemsEl.textContent = state.gems !== undefined ? state.gems : 0;
+
+    renderPartnerGame(); // [NEW]
 }
 
 function updateStatsUI() {
@@ -2409,6 +2576,71 @@ if (ui.select2048Speed) {
         if (is2048Auto) {
             start2048Auto(); // Restart with new speed
         }
+    });
+}
+
+// --- Partner Game Event Listeners ---
+if (ui.btnPartnerOpen) {
+    ui.btnPartnerOpen.addEventListener('click', () => {
+        ui.modalPartner.classList.remove('hidden');
+        setTimeout(() => {
+            ui.modalPartner.classList.remove('opacity-0');
+            ui.modalPartner.classList.remove('pointer-events-none');
+        }, 10);
+        renderPartnerGame();
+    });
+}
+
+if (ui.btnClosePartner) {
+    ui.btnClosePartner.addEventListener('click', () => {
+        ui.modalPartner.classList.add('opacity-0');
+        ui.modalPartner.classList.add('pointer-events-none');
+        setTimeout(() => ui.modalPartner.classList.add('hidden'), 300);
+    });
+}
+
+if (ui.btnPartnerMultToggle) {
+    ui.btnPartnerMultToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        ui.partnerMultDropdown.classList.toggle('hidden');
+    });
+}
+
+// Close multiplier dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    if (ui.partnerMultDropdown && !ui.partnerMultDropdown.classList.contains('hidden')) {
+        if (!ui.partnerMultDropdown.contains(e.target) && e.target !== ui.btnPartnerMultToggle) {
+            ui.partnerMultDropdown.classList.add('hidden');
+        }
+    }
+});
+
+if (ui.partnerMultDropdown) {
+    ui.partnerMultDropdown.querySelectorAll('.mult-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = parseInt(btn.dataset.val);
+            worker.postMessage({ type: 'UPDATE_PARTNER_DATA', payload: { multiplier: val } });
+            ui.partnerMultDropdown.classList.add('hidden');
+        });
+    });
+}
+
+// Tower interactions (Inject/Join)
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('btn-partner-inject')) {
+        const id = parseInt(e.target.dataset.id);
+        worker.postMessage({ type: 'PARTNER_GAME_INJECT', payload: { towerId: id } });
+    }
+    if (e.target.classList.contains('btn-partner-join')) {
+        const id = parseInt(e.target.dataset.id);
+        worker.postMessage({ type: 'PARTNER_GAME_JOIN', payload: { towerId: id } });
+    }
+});
+
+if (ui.inputPartnerTokens) {
+    ui.inputPartnerTokens.addEventListener('change', () => {
+        const val = parseInt(ui.inputPartnerTokens.value) || 0;
+        worker.postMessage({ type: 'UPDATE_PARTNER_DATA', payload: { tokens: val } });
     });
 }
 
