@@ -53,7 +53,26 @@ function parseRouletteIntegralCSV(csvText) {
             required: parseInt(p[1].trim()),
             coin: p[2] ? parseInt(p[2].trim()) : 0,
             gem: p[3] ? parseInt(p[3].trim()) : 0,
-            dice: p[4] ? parseInt(p[4].trim()) : 0
+            diceReward: parseInt(p[4].trim()) || 0,
+            skin: p[5] || "" // [NEW] Added for volcano
+        };
+    }).filter(x => x);
+}
+
+function parseVolcanoCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 7) return null;
+        // level,hp,reward_gold,reward_gem,reward_dice,reward_desc,skin
+        return {
+            level: parseInt(cols[0]),
+            hp: parseInt(cols[1]),
+            reward_gold: parseInt(cols[2]) || 0,
+            reward_gem: parseInt(cols[3]) || 0,
+            reward_dice: parseInt(cols[4]) || 0,
+            reward_desc: cols[5] || "",
+            skin: cols[6] || ""
         };
     }).filter(x => x);
 }
@@ -115,11 +134,32 @@ function parsePartnerGameCSV(csvText) {
 
 // --- WORKER INTEGRATION ---
 let worker;
-try {
-    worker = new Worker('scripts/worker.js');
-} catch (e) {
-    alert("⚠️ 無法載入本地 Worker 腳本 (CORS 安全性限制)。\n\n您目前似乎是直接雙擊開啟 HTML (file://)。請改用 Live Server 或將檔案放置於伺服器環境開啟，以正常執行遊戲！\n\n錯誤資訊：" + e.message);
-    throw e; // Stop execution
+
+async function setupWorker() {
+    try {
+        console.log("Attempting to load Worker via Blob...");
+        const response = await fetch('scripts/worker.js');
+        if (!response.ok) throw new Error("Worker fetch failed");
+        const code = await response.text();
+        const blob = new Blob([code], { type: 'application/javascript' });
+        worker = new Worker(URL.createObjectURL(blob));
+        console.log("Worker loaded via Blob successfully.");
+    } catch (e) {
+        console.warn("Blob Worker fallback, trying direct load:", e);
+        try {
+            worker = new Worker('scripts/worker.js');
+        } catch (e2) {
+            console.error("Critical: Worker failed to load.", e2);
+            alert("⚠️ Web Worker 載入失敗。\n請使用 Live Server 或伺服器環境開啟，或檢查腳本權限。");
+            return false;
+        }
+    }
+
+    if (worker) {
+        worker.onmessage = workerMessageHandler;
+        return true;
+    }
+    return false;
 }
 
 // --- BACKGROUND TIMER WORKER ---
@@ -196,6 +236,14 @@ let state = {
         ],
         multiplier: 1,
         stats: { totalSpent: 0, totalGenerated: 0 }
+    },
+    volcano: {
+        level: 1,
+        hp: 0,
+        maxHp: 0,
+        position: 10,
+        config: [],
+        stats: { totalHits: 0, totalKills: 0 }
     }
 };
 
@@ -241,6 +289,16 @@ const ui = {
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
     btnFast: document.getElementById('btn-fast'),
+
+    // Volcano Elements
+    volcanoLevel: document.getElementById('volcano-level-disp'),
+    volcanoHpCurrent: document.getElementById('volcano-hp-current'),
+    volcanoHpMax: document.getElementById('volcano-hp-max'),
+    volcanoHpBar: document.getElementById('volcano-hp-bar'),
+    volcanoModal: document.getElementById('volcano-modal'),
+    volcanoList: document.getElementById('volcano-list-content'),
+    btnVolcanoOpen: document.getElementById('btn-volcano-open'),
+    btnVolcanoClose: document.getElementById('btn-volcano-close'),
     tourList: document.getElementById('tournament-list'),
     btnResetStats: document.getElementById('btn-reset-stats'),
 
@@ -312,14 +370,13 @@ const DEFAULT_COLLECTION_CSV = `level,required_points,reward_gold,reward_desc
 1,3,1000,初級`;
 
 // Worker Message Listener
-// Worker Message Listener
-worker.onmessage = function (e) {
+function workerMessageHandler(e) {
     const { type, payload } = e.data;
 
     if (type === 'UPDATE_UI') {
         const previousPosition = state.position;
-        const steps = payload.diceRoll;
-        const isAuto = payload.isAuto; // This now means "Is this a turn execution?"
+        const steps = payload.diceRoll || 0; // [FIX] Worker sends 'diceRoll', not 'steps'
+        const isAuto = payload.isAuto;
 
         // Sync Data
         state.turn = payload.turn;
@@ -369,9 +426,15 @@ worker.onmessage = function (e) {
             }
         }
 
+        // [NEW] Volcano State Sync
+        if (payload.volcano) {
+            state.volcano = payload.volcano;
+            updateVolcanoUI();
+        }
+
         updateLogs(payload.logs);
 
-        if (steps > 0) {
+        if (steps > 0 && ui.diceVisual) {
             ui.diceVisual.classList.remove('text-xl');
             ui.diceVisual.classList.add('text-5xl');
             ui.diceVisual.textContent = steps;
@@ -427,7 +490,7 @@ worker.onmessage = function (e) {
             // but just in case, we'll let worker handle logs.
         }
 
-        const isFastMode = ui.btnFast.disabled === true && ui.btnAuto.classList.contains('hidden') === false;
+        const isFastMode = ui.btnFast && ui.btnFast.disabled === true && ui.btnAuto && !ui.btnAuto.classList.contains('hidden');
 
         if (isFastMode) {
             // Instant Update (Fast Sim)
@@ -441,6 +504,7 @@ worker.onmessage = function (e) {
         } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
             // "Watch Mode" (Auto Play) OR Manual Roll -> Animate
             const startPos = previousPosition;
+            const thiefPosBeforeRoll = thiefVisualPos; // Capture thief display pos BEFORE roll
             setIsAnimating(true);
 
             animateMove(startPos, steps, payload.position, () => {
@@ -452,6 +516,12 @@ worker.onmessage = function (e) {
                 renderBoard();
                 updatePlayerPosition(state.position); // [FIX] Re-apply active class AFTER render
 
+                // [NEW] Trigger thief animation AFTER player finishes moving
+                // (only if NOT already triggered during animateMove steps)
+                if (state.volcano && thiefVisualPos !== -1 && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
+                    animateThief(thiefVisualPos, state.volcano.position);
+                }
+
                 // [PING-PONG] If Auto Play, trigger next turn
                 if (isAutoRunning) {
                     reliableSetTimeout(() => {
@@ -460,7 +530,9 @@ worker.onmessage = function (e) {
                 }
             });
         } else {
-            // Fallback / Init / Extra Gen
+            // Fallback / Init / Extra Gen (state update with NO dice roll steps)
+            // DO NOT send NEXT_TURN here — it causes double-rolling during AUTO_PLAY
+            // because the worker sends UPDATE_UI for non-roll events (respawn, volcano hit, etc.)
             state.position = payload.position;
             requestAnimationFrame(() => {
                 renderBoard();
@@ -508,7 +580,7 @@ worker.onmessage = function (e) {
         link.click();
         document.body.removeChild(link);
     }
-};
+}
 
 let isAnimating = false;
 let isAutoRunning = false; // [FIX] Global state for Auto Play
@@ -525,6 +597,10 @@ function animateMove(startPos, steps, finalPos, onComplete) {
     function step() {
         if (document.hidden) {
             updatePlayerPosition(finalPos);
+            // Skip to end if hidden
+            if (state.volcano && thiefVisualPos !== -1 && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
+                animateThief(thiefVisualPos, state.volcano.position);
+            }
             if (onComplete) onComplete();
             return;
         }
@@ -538,6 +614,11 @@ function animateMove(startPos, steps, finalPos, onComplete) {
         const nextPos = (startPos + currentStep + 1) % BOARD_SIZE;
         updatePlayerPosition(nextPos);
         currentStep++;
+
+        // [NEW] Trigger thief animation the moment player steps on thief's tile
+        if (nextPos === thiefVisualPos && state.volcano && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
+            animateThief(thiefVisualPos, state.volcano.position);
+        }
 
         reliableSetTimeout(() => {
             if (document.hidden) {
@@ -581,13 +662,17 @@ function updateLogs(newLogs) {
             <span class="flex-1 text-gray-300 truncate">${data.detail}</span>
             <span class="${color} font-bold text-xs">${data.delta_gold !== 0 ? (data.delta_gold > 0 ? '+' : '') + data.delta_gold : ''}</span>
         `;
-        ui.logContainer.appendChild(div); // Newest at bottom
+        if (ui.logContainer) ui.logContainer.appendChild(div); // Newest at bottom
     });
 }
 
 
 // Initialization with Worker
 async function initGame() {
+    // 0. Setup Worker (Async)
+    const workerOk = await setupWorker();
+    if (!workerOk) return;
+
     // 1. Fetch Data First (Main Thread)
     // We still do fetch in Main Thread because it's easier to debug network tab here
     // We use the global variables declared at the top
@@ -733,6 +818,20 @@ async function initGame() {
         }
     });
 
+    // 4.5 Load Volcano Config (New)
+    try {
+        const resVolcano = await fetch('./config/volcano.csv');
+        if (resVolcano.ok) {
+            const text = await resVolcano.text();
+            const volcanoConfig = parseVolcanoCSV(text);
+            state.volcano.config = volcanoConfig;
+            console.log("Volcano Config Loaded:", volcanoConfig);
+            worker.postMessage({ type: 'UPDATE_CONFIG', payload: { volcanoConfig } });
+        }
+    } catch (e) {
+        console.warn("Volcano Config Load Failed", e);
+    }
+
     // 6. Load Partner Game Config
     try {
         const resPartner = await fetch('./config/partner_game.csv');
@@ -753,7 +852,10 @@ async function initGame() {
     }
 
     console.log("Worker Initialized");
-    renderBoard(); // Initial Render
+    // Start the game in the worker AFTER init — this resets state and triggers the first sendUpdate()
+    worker.postMessage({ type: 'START_GAME' });
+
+    renderBoard(); // Initial Render (using local state.properties)
 
     // [NEW] Auto Generate Icons based on config
     worker.postMessage({ type: 'GEN_EXTRA', payload: { count: systemConfig.Collect_Item_Count || 10 } });
@@ -848,13 +950,15 @@ ui.btnGenExtra.addEventListener('click', () => {
 
 
 // Fast Sim Handler
-ui.btnFast.addEventListener('click', () => {
-    const count = parseInt(ui.autoCount.value);
-    ui.btnFast.disabled = true;
-    ui.btnAuto.disabled = true;
-    ui.btnRoll.disabled = true;
-    worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
-});
+if (ui.btnFast) {
+    ui.btnFast.addEventListener('click', () => {
+        const count = parseInt(ui.autoCount.value);
+        if (ui.btnFast) ui.btnFast.disabled = true;
+        if (ui.btnAuto) ui.btnAuto.disabled = true;
+        if (ui.btnRoll) ui.btnRoll.disabled = true;
+        worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
+    });
+}
 
 
 if (ui.btnResetStats) {
@@ -1586,6 +1690,15 @@ function renderBoard() {
                 el.appendChild(badge);
             }
 
+            // [NEW] Volcano / Thief Icon — always rendered at thiefVisualPos (display position)
+            // NOT at state.volcano.position (logical position) to avoid premature appearance
+            if (state.volcano && thiefVisualPos >= 0 && thiefVisualPos === i) {
+                const thief = document.createElement('div');
+                thief.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
+                thief.innerHTML = '👤';
+                el.appendChild(thief);
+            }
+
             ui.board.appendChild(el);
         });
 
@@ -1772,21 +1885,26 @@ function renderPartnerGame() {
 }
 
 function updateUI() {
-    ui.money.textContent = state.money.toLocaleString();
-    ui.turn.textContent = state.turn;
+    if (ui.money) ui.money.textContent = state.money.toLocaleString();
+    if (ui.turn) ui.turn.textContent = state.turn;
+    if (ui.gems) ui.gems.textContent = (state.gems || 0).toLocaleString();
 
     // [NEW] Update Earned/Spent Dice
     if (ui.earnedDice) ui.earnedDice.textContent = (state.totalEarnedDice || 0).toLocaleString();
     if (ui.spentDice) ui.spentDice.textContent = (state.totalSpentDice || 0).toLocaleString();
 
     // Collection UI
-    const currentConfig = state.collection.config.find(c => c.level === state.collection.level);
+    const currentConfig = state.collection && state.collection.config
+        ? state.collection.config.find(c => c.level === state.collection.level)
+        : null;
     if (currentConfig) {
-        ui.colLevel.textContent = state.collection.level;
-        ui.colPoints.textContent = state.collection.points;
-        ui.colTarget.textContent = currentConfig.required;
-        const pct = Math.min((state.collection.points / currentConfig.required) * 100, 100);
-        ui.colBar.style.width = `${pct}%`;
+        if (ui.colLevel) ui.colLevel.textContent = state.collection.level;
+        if (ui.colPoints) ui.colPoints.textContent = state.collection.points;
+        if (ui.colTarget) ui.colTarget.textContent = currentConfig.required;
+        if (ui.colBar) {
+            const pct = Math.min((state.collection.points / currentConfig.required) * 100, 100);
+            ui.colBar.style.width = `${pct}%`;
+        }
 
         let rewardText = [];
         if (currentConfig.gold > 0) rewardText.push(`💰${currentConfig.gold.toLocaleString()}`);
@@ -1794,36 +1912,33 @@ function updateUI() {
         if (currentConfig.dice > 0) rewardText.push(`🎲${currentConfig.dice.toLocaleString()}`);
         if (currentConfig.desc) rewardText.push(currentConfig.desc);
         if (ui.colReward) ui.colReward.textContent = `Next: ` + rewardText.join(" ");
-    } else {
-        ui.colLevel.textContent = "MAX";
-        ui.colPoints.textContent = "-";
-        ui.colTarget.textContent = "-";
-        ui.colBar.style.width = "100%";
+    } else if (state.collection && state.collection.config && state.collection.config.length > 0) {
+        if (ui.colLevel) ui.colLevel.textContent = "MAX";
+        if (ui.colPoints) ui.colPoints.textContent = "-";
+        if (ui.colTarget) ui.colTarget.textContent = "-";
+        if (ui.colBar) ui.colBar.style.width = "100%";
         if (ui.colReward) ui.colReward.textContent = "已達最高等級";
     }
 
     // [NEW] Update Dice & Multiplier UI
     const diceInput = document.getElementById('dice-balance');
-    const multiplierSelect = document.getElementById('multiplier-select');
-
     if (diceInput && document.activeElement !== diceInput) {
         diceInput.value = state.dice !== undefined ? state.dice : 10000;
     }
 
     // Disable Roll Button if insufficient dice
-    if ((state.dice || 0) < (state.multiplier || 1)) {
-        ui.btnRoll.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        ui.btnRoll.title = "骰子不足 (Insufficient Dice)";
-    } else {
-        ui.btnRoll.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        ui.btnRoll.title = "";
+    if (ui.btnRoll) {
+        if ((state.dice || 0) < (state.multiplier || 1)) {
+            ui.btnRoll.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+            ui.btnRoll.title = "骰子不足 (Insufficient Dice)";
+        } else {
+            ui.btnRoll.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+            ui.btnRoll.title = "";
+        }
     }
 
-    // [NEW] Update Gems
-    const gemsEl = document.getElementById('display-gems');
-    if (gemsEl) gemsEl.textContent = state.gems !== undefined ? state.gems : 0;
-
-    renderPartnerGame(); // [NEW]
+    renderPartnerGame(); // Update partner UI (lightweight - only updates numbers)
+    updateVolcanoUI();   // Update volcano HP bar only (lightweight)
 }
 
 function updateStatsUI() {
@@ -2077,6 +2192,43 @@ enableDraggable(document.getElementById('tournament-panel'), document.getElement
 enableDraggable(document.getElementById('roulette-side-panel'), document.getElementById('roulette-side-panel'));
 enableDraggable(document.getElementById('2048-side-panel'), document.getElementById('2048-side-panel'));
 enableDraggable(document.getElementById('partner-side-panel'), document.getElementById('partner-side-panel'));
+// --- Translate-based draggable (safe for flex children: no position change, no size change) ---
+function makeTranslatable(el) {
+    if (!el) return;
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let currentX = 0, currentY = 0;
+
+    el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+        isDragging = true;
+        startX = e.clientX - currentX;
+        startY = e.clientY - currentY;
+        el.style.transition = 'none'; // Disable animation so it follows mouse instantly (same as enableDraggable)
+        el.style.zIndex = '50';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        currentX = e.clientX - startX;
+        currentY = e.clientY - startY;
+        el.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            el.style.transition = ''; // Restore CSS transition after drag
+            el.style.zIndex = '';
+        }
+    });
+}
+
+// volcano-side-panel uses transform-based drag to avoid size distortion
+makeTranslatable(document.getElementById('volcano-side-panel'));
+
 
 // --- Tournament Reset ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
@@ -2859,3 +3011,140 @@ function flashTitle() {
 }
 
 window.flashTitle = flashTitle;
+
+// Thief animation state
+// thiefVisualPos = where thief icon IS currently displayed (NOT state.volcano.position)
+// renderBoard uses this, so no premature icon appears
+let thiefVisualPos = -1;
+let thiefAnimTimer = null;
+
+function updateVolcanoUI() {
+    if (!state.volcano) return;
+
+    if (ui.volcanoLevel) ui.volcanoLevel.textContent = state.volcano.level;
+    if (ui.volcanoHpCurrent) ui.volcanoHpCurrent.textContent = Math.ceil(state.volcano.hp).toLocaleString();
+    if (ui.volcanoHpMax) ui.volcanoHpMax.textContent = state.volcano.maxHp.toLocaleString();
+
+    if (ui.volcanoHpBar) {
+        const pct = state.volcano.maxHp > 0 ? (state.volcano.hp / state.volcano.maxHp) * 100 : 0;
+        ui.volcanoHpBar.style.width = `${pct}%`;
+    }
+
+    // Initialize thiefVisualPos on first call only (no animation trigger here)
+    if (thiefVisualPos === -1 && state.volcano.position !== undefined) {
+        thiefVisualPos = state.volcano.position;
+    }
+}
+
+function animateThief(fromPos, toPos) {
+    if (thiefAnimTimer) clearTimeout(thiefAnimTimer);
+
+    const speed = systemConfig.Volcano_Speed || 10; // tiles per second
+    const intervalMs = Math.round(1000 / speed);
+    const total = BOARD_SIZE;
+    let current = fromPos;
+
+    const stepsForward = (toPos - fromPos + total) % total;
+    if (stepsForward === 0) {
+        thiefVisualPos = toPos;
+        return;
+    }
+
+    let stepCount = 0;
+
+    function stepThief() {
+        stepCount++;
+        if (stepCount > stepsForward) {
+            // Done — update visual pos and do final board render (static badge will appear)
+            thiefAnimTimer = null;
+            thiefVisualPos = toPos;
+            requestAnimationFrame(() => renderBoard());
+            return;
+        }
+
+        const prevPos = current;          // tile we are leaving
+        current = (current + 1) % total;  // move forward (clockwise)
+        thiefVisualPos = current;         // keep visual pos in sync
+
+        // Remove badge from previous tile
+        const prevTile = document.getElementById(`tile-${prevPos}`);
+        if (prevTile) prevTile.querySelectorAll('.thief-badge').forEach(b => b.remove());
+
+        // Place badge on current tile
+        const curTile = document.getElementById(`tile-${current}`);
+        if (curTile && !curTile.querySelector('.thief-badge')) {
+            const badge = document.createElement('div');
+            badge.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
+            badge.innerHTML = '\ud83d\udc64';
+            curTile.appendChild(badge);
+        }
+
+        thiefAnimTimer = setTimeout(stepThief, intervalMs);
+    }
+
+    // Clear any existing badge from start tile, then place badge there
+    const startTile = document.getElementById(`tile-${fromPos}`);
+    if (startTile) {
+        startTile.querySelectorAll('.thief-badge').forEach(b => b.remove());
+        const badge = document.createElement('div');
+        badge.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
+        badge.innerHTML = '\ud83d\udc64';
+        startTile.appendChild(badge);
+    }
+
+    stepThief();
+}
+
+function openVolcanoModal() {
+    if (ui.volcanoModal) {
+        ui.volcanoModal.classList.remove('hidden');
+        // Force reflow
+        void ui.volcanoModal.offsetWidth;
+        ui.volcanoModal.classList.remove('opacity-0');
+        renderVolcanoList();
+    }
+}
+
+function closeVolcanoModal() {
+    if (ui.volcanoModal) {
+        ui.volcanoModal.classList.add('opacity-0');
+        setTimeout(() => ui.volcanoModal.classList.add('hidden'), 300);
+    }
+}
+
+function renderVolcanoList() {
+    if (!ui.volcanoList || !state.volcano || !state.volcano.config) return;
+
+    let html = '';
+    state.volcano.config.forEach(cfg => {
+        const isCurrent = cfg.level === state.volcano.level;
+        const rewards = [];
+        if (cfg.reward_gold) rewards.push(`💰${cfg.reward_gold}`);
+        if (cfg.reward_gem) rewards.push(`💎${cfg.reward_gem}`);
+        if (cfg.reward_dice) rewards.push(`🎲${cfg.reward_dice}`);
+
+        html += `
+            <div class="flex items-center justify-between p-3 rounded-lg border ${isCurrent ? 'bg-red-500/10 border-red-500/50' : 'bg-white/5 border-white/10'}">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-red-600/20 flex items-center justify-center text-xl border border-red-500/30">👤</div>
+                    <div>
+                        <div class="text-sm font-bold ${isCurrent ? 'text-red-400' : 'text-gray-300'}">Lv.${cfg.level} 匪徒 ${isCurrent ? '(當前)' : ''}</div>
+                        <div class="text-[10px] text-gray-500">生命值: ${cfg.hp} | ${cfg.reward_desc}</div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[10px] text-gray-500 mb-1 uppercase tracking-tighter">擊敗獎勵</div>
+                    <div class="text-xs font-bold text-yellow-500">${rewards.join(' ')}</div>
+                </div>
+            </div>
+        `;
+    });
+    ui.volcanoList.innerHTML = html;
+}
+
+// Event Listeners for Volcano
+if (ui.btnVolcanoOpen) {
+    ui.btnVolcanoOpen.addEventListener('mousedown', (e) => e.stopPropagation()); // Prevent drag start
+    ui.btnVolcanoOpen.addEventListener('click', openVolcanoModal);
+}
+if (ui.btnVolcanoClose) ui.btnVolcanoClose.addEventListener('click', closeVolcanoModal);

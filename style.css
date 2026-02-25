@@ -117,6 +117,7 @@
     gap: 2px;
     padding: 2px;
     flex-shrink: 0;
+    transform: translateX(-100px);
 }
 
 .tile {

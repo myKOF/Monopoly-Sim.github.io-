@@ -35,6 +35,14 @@ let state = {
         multiplier: 1,
         config: [],
         stats: { totalSpent: 0, totalGenerated: 0 }
+    },
+    volcano: {
+        level: 1,
+        hp: 0,
+        maxHp: 0,
+        position: 10,
+        config: [],
+        stats: { totalHits: 0, totalKills: 0 }
     }
 };
 
@@ -134,6 +142,7 @@ self.onmessage = function (e) {
             state.isRunning = false;
             init2048State();
             initPartnerGameState(); // [NEW]
+            initVolcanoState(payload.volcanoConfig); // [NEW]
             // No sendUpdate here, as START_GAME will follow
             break;
 
@@ -171,12 +180,22 @@ self.onmessage = function (e) {
             generateExtraObjects(initialCount);
 
             initPartnerGameState(); // [NEW] Reset partner game on start
+
+            // [NEW] Volcano Reset
+            if (state.volcano.config && state.volcano.config.length > 0) {
+                const cfg = state.volcano.config.find(c => c.level === 1);
+                state.volcano.level = 1;
+                state.volcano.hp = cfg ? cfg.hp : 500;
+                state.volcano.maxHp = state.volcano.hp;
+                state.volcano.position = 10; // Start at tile 10
+            }
             break;
 
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
             if (payload.dice !== undefined) state.dice = payload.dice;
             if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
             if (payload.rouletteTokens !== undefined) state.roulette.tokens = payload.rouletteTokens; // [NEW] Sync Roulette Tokens
+            if (payload.volcanoConfig !== undefined) state.volcano.config = payload.volcanoConfig; // [NEW]
             sendUpdate();
             break;
 
@@ -760,6 +779,9 @@ function execTurn(isAuto, silent = false) {
     // Events
     handleTileEvent(state.position);
 
+    // [NEW] Volcano Collision Detection (Multi-step)
+    checkVolcanoCollision(prevPos, steps);
+
     // Send Update to Main Thread
     if (!silent) sendUpdate(steps, isAuto);
 }
@@ -893,7 +915,7 @@ function checkCollectionEvent(pos) {
         let currentConfig = state.collection.config.find(c => c.level === state.collection.level);
 
         // Loop for multi-level up
-        while (currentConfig && state.collection.points >= currentConfig.required) {
+        while (currentConfig && currentConfig.required > 0 && state.collection.points >= currentConfig.required) {
             state.collection.points -= currentConfig.required;
             state.collection.level++;
 
@@ -1021,7 +1043,15 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
         },
         tournamentBonus: state.pendingTournamentBonus || 0, // [NEW] Pass tournament points
         game2048: state.game2048,
-        partnerGame: state.partnerGame // [NEW]
+        partnerGame: state.partnerGame, // [NEW]
+        volcano: {
+            level: state.volcano.level,
+            hp: state.volcano.hp,
+            maxHp: state.volcano.maxHp,
+            position: state.volcano.position,
+            stats: state.volcano.stats,
+            config: state.volcano.config // For the modal
+        }
     };
 
     // Reset pending bonus after sending
@@ -1051,7 +1081,7 @@ function spinRoulette() {
     // [NEW] Process Integral Level Up locally
     if (state.roulette.integralConfig && state.roulette.integralConfig.length > 0) {
         let currentCfg = state.roulette.integralConfig.find(c => c.level === state.roulette.integral.level);
-        while (currentCfg && state.roulette.integral.score >= currentCfg.required) {
+        while (currentCfg && currentCfg.required > 0 && state.roulette.integral.score >= currentCfg.required) {
             // Level Up
             state.roulette.integral.score -= currentCfg.required;
             state.roulette.integral.level++;
@@ -1359,3 +1389,106 @@ function getRandomRange(min, max) {
 }
 
 setInterval(tickPartnerBots, 2000); // Check every 2 seconds
+
+// [NEW] Volcano (Police and Thief) Logic
+function initVolcanoState(config) {
+    state.volcano.config = config || [];
+    if (state.volcano.config.length > 0) {
+        const cfg = state.volcano.config.find(c => c.level === state.volcano.level);
+        if (cfg) {
+            state.volcano.hp = cfg.hp;
+            state.volcano.maxHp = cfg.hp;
+        }
+    }
+}
+
+function checkVolcanoCollision(startPos, steps) {
+    // Check each step taken during the move
+    for (let i = 1; i <= steps; i++) {
+        const currentPos = (startPos + i) % BOARD_SIZE;
+        if (currentPos === state.volcano.position) {
+            handleVolcanoHit();
+            break; // Max one hit per roll
+        }
+    }
+}
+
+function handleVolcanoHit() {
+    const mult = state.multiplier || 1;
+    const damage = mult; // Damage simplified to multiplier or 1 per multiplier? 
+    // Requirement rule 2: "碰撞到該匪徒，則匪徒會減少生命值"
+    // Usually damage is multiplier.
+
+    state.volcano.hp = Math.max(0, state.volcano.hp - damage);
+    state.volcano.stats.totalHits++;
+
+    recordLog({
+        turn: state.turn, position: state.position, event: "VOLCANO_HIT", delta_gold: 0, current_balance: state.money,
+        detail: `💥 撞擊匪徒！減少 HP ${damage} (剩餘 ${state.volcano.hp}/${state.volcano.maxHp})`
+    });
+
+    if (state.volcano.hp <= 0) {
+        handleVolcanoKill();
+    } else {
+        moveVolcanoEscape();
+    }
+}
+
+function handleVolcanoKill() {
+    const level = state.volcano.level;
+    const cfg = state.volcano.config.find(c => c.level === level);
+
+    if (cfg) {
+        // Grant Rewards
+        if (cfg.reward_gold > 0) addMoney(cfg.reward_gold, "VOLCANO_REWARD", `擊敗 Lv.${level} 匪徒獎勵：金幣 ${cfg.reward_gold}`);
+        if (cfg.reward_gem > 0) {
+            state.gems += cfg.reward_gem;
+            recordLog({ turn: state.turn, position: state.position, event: "VOLCANO_GEM", delta_gold: 0, current_balance: state.money, detail: `擊敗匪徒獎勵：寶石 ${cfg.reward_gem}` });
+        }
+        if (cfg.reward_dice > 0) {
+            state.dice += cfg.reward_dice;
+            state.totalEarnedDice += cfg.reward_dice;
+            state.earnedDiceBreakdown['警匪追逐'] = (state.earnedDiceBreakdown['警匪追逐'] || 0) + cfg.reward_dice;
+            recordLog({ turn: state.turn, position: state.position, event: "VOLCANO_DICE", delta_gold: 0, current_balance: state.money, detail: `擊敗匪徒獎勵：骰子 ${cfg.reward_dice}` });
+        }
+    }
+
+    state.volcano.stats.totalKills++;
+
+    // Spawn next level
+    if (level < 10) {
+        state.volcano.level++;
+        const nextCfg = state.volcano.config.find(c => c.level === state.volcano.level);
+        if (nextCfg) {
+            state.volcano.hp = nextCfg.hp;
+            state.volcano.maxHp = nextCfg.hp;
+            recordLog({ turn: state.turn, position: state.position, event: "VOLCANO_LEVELUP", delta_gold: 0, current_balance: state.money, detail: `出現 Lv.${state.volcano.level} 級匪徒！` });
+        }
+    } else {
+        // Loop back to level 1 for endless play or stay at max?
+        // User said: "出現下一個等級的匪徒". Usually loop if maxed.
+        state.volcano.level = 1;
+        const resetCfg = state.volcano.config.find(c => c.level === 1);
+        if (resetCfg) {
+            state.volcano.hp = resetCfg.hp;
+            state.volcano.maxHp = resetCfg.hp;
+        }
+    }
+
+    // Move to new position after kill
+    state.volcano.position = (state.volcano.position + 20) % BOARD_SIZE;
+}
+
+function moveVolcanoEscape() {
+    // Escape steps defined in system_config Volcano_Board_Count {min, max}
+    const range = parseRange(state.systemConfig.Volcano_Board_Count || "{15,30}");
+    const escapeSteps = Math.floor(getRandomRange(range[0], range[1]));
+
+    // 向前逃走 (順時針，與玩家同方向) - Forward clockwise movement
+    state.volcano.position = (state.volcano.position + escapeSteps) % BOARD_SIZE;
+
+    recordLog({
+        turn: state.turn, position: state.position, event: "VOLCANO_ESCAPE", delta_gold: 0, current_balance: state.money,
+        detail: `🏃 匪徒向前逃走了 ${escapeSteps} 格！`
+    });
+}

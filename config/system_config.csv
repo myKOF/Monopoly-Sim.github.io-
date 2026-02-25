@@ -18,3 +18,5 @@
 17,Partner_Game_TokenValue,"{10,100}",合作伙伴代幣轉分數值
 18,Partner_Game_PartnerValue,"{15,120}",合作伙伴機器人分數
 19,Partner_Game_PartnerValueTime,"{5,15}",合作伙伴機器人增加分數週期
+20,Volcano_Speed,15,警匪追逐速度(格/秒)
+21,Volcano_Board_Count,"{20,35}",警匪追逐移動格數
