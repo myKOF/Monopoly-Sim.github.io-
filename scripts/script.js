@@ -2678,3 +2678,19 @@ function stopBoardDrag() {
     document.removeEventListener('mousemove', handleBoardDrag);
     document.removeEventListener('mouseup', stopBoardDrag);
 }
+
+function flashTitle() {
+    const originalTitle = document.title;
+    const flashTitleText = '【待確認】';
+    let count = 0;
+    const interval = setInterval(() => {
+        document.title = (document.title === originalTitle) ? flashTitleText : originalTitle;
+        count++;
+        if (count >= 10) {
+            clearInterval(interval);
+            document.title = originalTitle;
+        }
+    }, 500);
+}
+
+window.flashTitle = flashTitle;

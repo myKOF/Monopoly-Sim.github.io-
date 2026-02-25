@@ -1216,10 +1216,10 @@ function initPartnerGameState() {
         tokens: initialTokens,
         multiplier: 1,
         towers: [
-            { id: 1, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
-            { id: 2, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
-            { id: 3, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 },
-            { id: 4, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0 }
+            { id: 1, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
+            { id: 2, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
+            { id: 3, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
+            { id: 4, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] }
         ],
         stats: { totalSpent: 0, totalGenerated: 0 }
     };
@@ -1260,11 +1260,45 @@ function handlePartnerInject(towerId) {
     tower.myScore += score;
     pg.stats.totalGenerated += score;
 
-    // Track Dice Statistics
-    state.totalSpentDice += cost;
-    state.spentDiceBreakdown['合作伙伴活動'] = (state.spentDiceBreakdown['合作伙伴活動'] || 0) + cost;
-
+    checkPartnerMilestones(towerId);
     sendUpdate();
+}
+
+function checkPartnerMilestones(towerId) {
+    if (!state.partnerGame || !state.partnerGame.config) return;
+
+    const tower = state.partnerGame.towers.find(t => t.id === towerId);
+    if (!tower) return;
+
+    const totalScore = tower.myScore + tower.partnerScore;
+    const towerMilestones = state.partnerGame.config.filter(m => m.partner == towerId);
+
+    towerMilestones.forEach(m => {
+        // Find if this milestone was already claimed
+        // We use its required score as unique ID per partner
+        if (totalScore >= m.required && !tower.claimedMilestones.includes(m.required)) {
+            tower.claimedMilestones.push(m.required);
+
+            // Grant Rewards
+            if (m.coin) addMoney(m.coin, 'EVENT_REWARD', `合作伙伴大賽隊伍 ${towerId} 達成 ${m.required} 分獎勵`);
+            if (m.gem) {
+                state.gems += m.gem;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
+                    current_balance: state.money, detail: `合作伙伴隊伍 ${towerId} 獎勵：寶石 ${m.gem}`
+                });
+            }
+            if (m.dice) {
+                state.dice += m.dice;
+                state.totalEarnedDice += m.dice;
+                state.earnedDiceBreakdown['合作伙伴活動'] = (state.earnedDiceBreakdown['合作伙伴活動'] || 0) + m.dice;
+                recordLog({
+                    turn: state.turn, position: state.position, event: "EVENT_REWARD_DICE", delta_gold: 0,
+                    current_balance: state.money, detail: `合作伙伴隊伍 ${towerId} 達成 ${m.required} 分獎勵：骰子 ${m.dice}`
+                });
+            }
+        }
+    });
 }
 
 function tickPartnerBots() {
@@ -1288,6 +1322,8 @@ function tickPartnerBots() {
             const timeRange = parseRange(state.systemConfig.Partner_Game_PartnerValueTime || "{5,15}");
             const cd = getRandomRange(timeRange[0], timeRange[1]);
             tower.nextBotTick = now + (cd * 1000);
+
+            checkPartnerMilestones(tower.id);
             updated = true;
         }
     });
