@@ -495,16 +495,12 @@ function workerMessageHandler(e) {
         if (isFastMode) {
             // Instant Update (Fast Sim)
             state.position = payload.position;
-            requestAnimationFrame(() => {
-                renderBoard();
-                updateUI();
-                updateStatsUI();
-                updatePlayerPosition(state.position);
-            });
+            updateDynamicUI();
+            updateUI();
+            updateStatsUI();
         } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
             // "Watch Mode" (Auto Play) OR Manual Roll -> Animate
             const startPos = previousPosition;
-            const thiefPosBeforeRoll = thiefVisualPos; // Capture thief display pos BEFORE roll
             setIsAnimating(true);
 
             animateMove(startPos, steps, payload.position, () => {
@@ -513,16 +509,13 @@ function workerMessageHandler(e) {
 
                 updateStatsUI();
                 updateUI();
-                renderBoard();
-                updatePlayerPosition(state.position); // [FIX] Re-apply active class AFTER render
+                updateDynamicUI(); // Lightweight update instead of full renderBoard
+                updatePlayerPosition(state.position);
 
-                // [NEW] Trigger thief animation AFTER player finishes moving
-                // (only if NOT already triggered during animateMove steps)
                 if (state.volcano && thiefVisualPos !== -1 && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
                     animateThief(thiefVisualPos, state.volcano.position);
                 }
 
-                // [PING-PONG] If Auto Play, trigger next turn
                 if (isAutoRunning) {
                     reliableSetTimeout(() => {
                         worker.postMessage({ type: 'NEXT_TURN' });
@@ -530,16 +523,10 @@ function workerMessageHandler(e) {
                 }
             });
         } else {
-            // Fallback / Init / Extra Gen (state update with NO dice roll steps)
-            // DO NOT send NEXT_TURN here — it causes double-rolling during AUTO_PLAY
-            // because the worker sends UPDATE_UI for non-roll events (respawn, volcano hit, etc.)
             state.position = payload.position;
-            requestAnimationFrame(() => {
-                renderBoard();
-                updateUI();
-                updateStatsUI();
-                updatePlayerPosition(state.position);
-            });
+            updateDynamicUI();
+            updateUI();
+            updateStatsUI();
         }
     }
 
@@ -662,7 +649,13 @@ function updateLogs(newLogs) {
             <span class="flex-1 text-gray-300 truncate">${data.detail}</span>
             <span class="${color} font-bold text-xs">${data.delta_gold !== 0 ? (data.delta_gold > 0 ? '+' : '') + data.delta_gold : ''}</span>
         `;
-        if (ui.logContainer) ui.logContainer.appendChild(div); // Newest at bottom
+        if (ui.logContainer) {
+            ui.logContainer.appendChild(div);
+            // [OPTIMIZATION] Limit the number of logs in the DOM
+            if (ui.logContainer.children.length > 100) {
+                ui.logContainer.removeChild(ui.logContainer.firstElementChild);
+            }
+        }
     });
 }
 
@@ -855,7 +848,7 @@ async function initGame() {
     // Start the game in the worker AFTER init — this resets state and triggers the first sendUpdate()
     worker.postMessage({ type: 'START_GAME' });
 
-    renderBoard(); // Initial Render (using local state.properties)
+    initBoard(); // Initial Render (using local state.properties)
 
     // [NEW] Auto Generate Icons based on config
     worker.postMessage({ type: 'GEN_EXTRA', payload: { count: systemConfig.Collect_Item_Count || 10 } });
@@ -1637,10 +1630,11 @@ function getGridPos(index) {
     return { r: 1 + (index - 39), c: 14 };
 }
 
-function renderBoard() {
-    // ... Existing Render Logic ...
-    // Note: Use state.properties (local copy) and state.extraObjects (synced)
-    // Since this is long, I will use the simplified version but ensure I don't break functionality
+// [OPTIMIZATION] Split renderBoard into initBoard and dynamic update
+let isBoardInitialized = false;
+
+function initBoard() {
+    if (isBoardInitialized) return;
     try {
         const centerPanel = document.getElementById('center-panel');
         const dragHandle = document.getElementById('board-drag-handle');
@@ -1681,34 +1675,56 @@ function renderBoard() {
             }
 
             el.innerHTML = content;
-
-            if (state.extraObjects.has(i)) {
-                el.classList.add('ring-2', 'ring-pink-500');
-                const badge = document.createElement('div');
-                badge.className = 'absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow z-10';
-                badge.innerHTML = '🍦';
-                el.appendChild(badge);
-            }
-
-            // [NEW] Volcano / Thief Icon — always rendered at thiefVisualPos (display position)
-            // NOT at state.volcano.position (logical position) to avoid premature appearance
-            if (state.volcano && thiefVisualPos >= 0 && thiefVisualPos === i) {
-                const thief = document.createElement('div');
-                thief.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
-                thief.innerHTML = '👤';
-                el.appendChild(thief);
-            }
-
             ui.board.appendChild(el);
         });
 
+        // Add Player Marker
         const marker = document.createElement('div');
         marker.id = 'player-marker';
         marker.className = 'player-marker';
         ui.board.appendChild(marker);
 
+        isBoardInitialized = true;
+        updateDynamicUI();
     } catch (err) {
-        console.error("Render Failed:", err);
+        console.error("Board Init Failed:", err);
+    }
+}
+
+function updateDynamicUI() {
+    updatePlayerPosition(state.position);
+
+    document.querySelectorAll('.tile-extra-badge').forEach(el => el.remove());
+    document.querySelectorAll('.ring-2.ring-pink-500').forEach(el => el.classList.remove('ring-2', 'ring-pink-500'));
+
+    state.extraObjects.forEach(i => {
+        const el = document.getElementById(`tile-${i}`);
+        if (el) {
+            el.classList.add('ring-2', 'ring-pink-500');
+            const badge = document.createElement('div');
+            badge.className = 'tile-extra-badge absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow z-10';
+            badge.innerHTML = '🍦';
+            el.appendChild(badge);
+        }
+    });
+
+    document.querySelectorAll('.thief-badge').forEach(el => el.remove());
+    if (state.volcano && thiefVisualPos >= 0) {
+        const el = document.getElementById(`tile-${thiefVisualPos}`);
+        if (el) {
+            const thief = document.createElement('div');
+            thief.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
+            thief.innerHTML = '👤';
+            el.appendChild(thief);
+        }
+    }
+}
+
+function renderBoard() {
+    if (!isBoardInitialized) {
+        initBoard();
+    } else {
+        updateDynamicUI();
     }
 }
 
@@ -1751,7 +1767,7 @@ function renderCollectionRewardsList() {
 }
 
 function renderPartnerGame() {
-    if (!state.partnerGame) return;
+    if (!state.partnerGame || !ui.modalPartner || ui.modalPartner.classList.contains('hidden')) return;
     const pg = state.partnerGame;
 
     // Tokens
@@ -1942,7 +1958,8 @@ function updateUI() {
 }
 
 function updateStatsUI() {
-    // ... Copy stats logic ...
+    if (!ui.statsContent || !ui.statsContent.offsetParent) return; // Only if visible
+
     if (!state.tileVisits || state.tileVisits.length === 0) {
         ui.statsContent.innerHTML = '<div class="p-4 text-center text-gray-500 text-xs">Waiting...</div>';
         ui.statsTotalMoves.textContent = "0";
@@ -2029,7 +2046,7 @@ function updateTournamentBots() {
         }
     });
 
-    if (updated) {
+    if (updated && ui.tourList && ui.tourList.offsetParent) {
         renderTournamentUI();
     }
 
@@ -2041,6 +2058,7 @@ function getRandomRange(min, max) {
 }
 
 function renderTournamentUI() {
+    if (!ui.tourList || !ui.tourList.offsetParent) return; // Only if visible
     // Merge Player into list for display
     const list = [...state.tournament.participants];
     list.push({
