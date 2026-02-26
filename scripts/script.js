@@ -214,7 +214,7 @@ let state = {
     logs: [],
     properties: [],
     extraObjects: new Set(),
-    collection: { level: 1, points: 0, totalCollected: 0, config: [] },
+    collection: { level: 1, points: 0, totalCollected: 0, config: [], enabled: true },
     tileVisits: [],
     tournament: {
         participants: [], // {id, name, score, target, valueRange:[], cdRange:[], nextUpdate: 0}
@@ -281,6 +281,9 @@ const ui = {
     colBar: document.getElementById('collection-bar'),
     colReward: document.getElementById('collection-reward-desc'),
     colRewardsToggle: document.getElementById('collection-rewards-toggle'),
+    btnColToggle: document.getElementById('btn-collection-toggle'),
+    colToggleDot: document.getElementById('collection-toggle-dot'),
+    colToggleText: document.getElementById('collection-toggle-text'),
     colRewardsModal: document.getElementById('collection-rewards-modal'),
     colRewardsBackdrop: document.getElementById('collection-rewards-backdrop'),
     colRewardsList: document.getElementById('collection-rewards-list'),
@@ -301,6 +304,7 @@ const ui = {
     btnVolcanoClose: document.getElementById('btn-volcano-close'),
     tourList: document.getElementById('tournament-list'),
     btnResetStats: document.getElementById('btn-reset-stats'),
+    btnResetUI: document.getElementById('btn-reset-ui'),
 
     // [NEW] 2048 DOM Elements
     btn2048Open: document.getElementById('btn-2048-open'),
@@ -979,6 +983,14 @@ if (btnResetDiceStats) {
     });
 }
 
+if (ui.btnColToggle) {
+    ui.btnColToggle.addEventListener('click', () => {
+        state.collection.enabled = !state.collection.enabled;
+        worker.postMessage({ type: 'UPDATE_COLLECTION_ENABLED', payload: { enabled: state.collection.enabled } });
+        updateUI(); // Refresh UI to show grayed out state
+    });
+}
+
 function endAutoRoll(finished) {
     isAutoRunning = false; // [FIX] Ensure state is reset
     ui.btnAuto.classList.remove('hidden');
@@ -1042,6 +1054,7 @@ function openRoulette() {
     // Force reflow
     void uiRouletteModal.offsetWidth;
     uiRouletteModal.classList.remove('opacity-0');
+    if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
     renderRoulette();
     updateRouletteUI();
 }
@@ -1050,6 +1063,7 @@ function closeRoulette() {
     uiRouletteModal.classList.add('opacity-0');
     setTimeout(() => {
         uiRouletteModal.classList.add('hidden');
+        if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
     }, 300);
     // Stop Auto if closed?
     if (rouletteInterval) toggleAutoRoulette();
@@ -1910,6 +1924,24 @@ function updateUI() {
     if (ui.spentDice) ui.spentDice.textContent = (state.totalSpentDice || 0).toLocaleString();
 
     // Collection UI
+    const isColEnabled = state.collection && state.collection.enabled !== false;
+    const colPanel = document.getElementById('activity-drag-handle');
+
+    if (ui.colToggleDot) {
+        ui.colToggleDot.className = `w-2 h-2 rounded-full transition-all ${isColEnabled ? 'bg-neon-green shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-gray-500 shadow-none'}`;
+    }
+    if (ui.colToggleText) {
+        ui.colToggleText.textContent = isColEnabled ? '啟動中' : '關閉中';
+        ui.colToggleText.className = `text-[9px] font-bold ${isColEnabled ? 'text-gray-200' : 'text-gray-500'}`;
+    }
+    if (colPanel) {
+        if (!isColEnabled) {
+            colPanel.classList.add('opacity-50', 'grayscale-[0.5]');
+        } else {
+            colPanel.classList.remove('opacity-50', 'grayscale-[0.5]');
+        }
+    }
+
     const currentConfig = state.collection && state.collection.config
         ? state.collection.config.find(c => c.level === state.collection.level)
         : null;
@@ -2644,6 +2676,7 @@ if (ui.btnClose2048) {
         ui.modal2048.classList.add('opacity-0');
         setTimeout(() => {
             ui.modal2048.classList.add('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
         }, 300);
 
         document.removeEventListener('keydown', handle2048Input);
@@ -2830,6 +2863,7 @@ if (ui.select2048Speed) {
 if (ui.btnPartnerOpen) {
     ui.btnPartnerOpen.addEventListener('click', () => {
         ui.modalPartner.classList.remove('hidden');
+        if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
         setTimeout(() => {
             ui.modalPartner.classList.remove('opacity-0');
             ui.modalPartner.classList.remove('pointer-events-none');
@@ -2842,7 +2876,10 @@ if (ui.btnClosePartner) {
     ui.btnClosePartner.addEventListener('click', () => {
         ui.modalPartner.classList.add('opacity-0');
         ui.modalPartner.classList.add('pointer-events-none');
-        setTimeout(() => ui.modalPartner.classList.add('hidden'), 300);
+        setTimeout(() => {
+            ui.modalPartner.classList.add('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
+        }, 300);
     });
 }
 
@@ -2877,6 +2914,7 @@ if (ui.colRewardsToggle && ui.colRewardsModal) {
     const showModal = () => {
         renderCollectionRewardsList();
         ui.colRewardsModal.classList.remove('hidden');
+        if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
         // Trigger animations
         setTimeout(() => {
             ui.colRewardsBackdrop.style.opacity = '1';
@@ -2889,7 +2927,10 @@ if (ui.colRewardsToggle && ui.colRewardsModal) {
         ui.colRewardsBackdrop.style.opacity = '0';
         ui.colRewardsList.style.opacity = '0';
         ui.colRewardsList.style.transform = 'scale(0.9)';
-        setTimeout(() => ui.colRewardsModal.classList.add('hidden'), 300);
+        setTimeout(() => {
+            ui.colRewardsModal.classList.add('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
+        }, 300);
     };
 
     ui.colRewardsToggle.addEventListener('click', (e) => {
@@ -3090,6 +3131,7 @@ function animateThief(fromPos, toPos) {
 function openVolcanoModal() {
     if (ui.volcanoModal) {
         ui.volcanoModal.classList.remove('hidden');
+        if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
         // Force reflow
         void ui.volcanoModal.offsetWidth;
         ui.volcanoModal.classList.remove('opacity-0');
@@ -3100,7 +3142,10 @@ function openVolcanoModal() {
 function closeVolcanoModal() {
     if (ui.volcanoModal) {
         ui.volcanoModal.classList.add('opacity-0');
-        setTimeout(() => ui.volcanoModal.classList.add('hidden'), 300);
+        setTimeout(() => {
+            ui.volcanoModal.classList.add('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
+        }, 300);
     }
 }
 

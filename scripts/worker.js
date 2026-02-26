@@ -11,7 +11,7 @@ let state = {
     logs: [],
     properties: [], // Receives from Main Thread
     extraObjects: new Set(),
-    collection: { level: 1, points: 0, totalCollected: 0, config: [] },
+    collection: { level: 1, points: 0, totalCollected: 0, config: [], enabled: true },
     tileVisits: new Array(BOARD_SIZE).fill(0),
     isRunning: false,
     autoRollTimer: null,
@@ -233,6 +233,19 @@ self.onmessage = function (e) {
 
         case 'GEN_EXTRA':
             generateExtraObjects(payload.count);
+            break;
+        case 'UPDATE_COLLECTION_ENABLED':
+            state.collection.enabled = payload.enabled;
+            // If disabled, we could clear extra objects, but let's see if user wants that.
+            // User said: "關閉時相當於沒有這個活動"
+            if (!state.collection.enabled) {
+                state.extraObjects.clear();
+            } else {
+                // If re-enabled, trigger a spawn based on current config
+                const initialCount = (state.systemConfig && state.systemConfig.Collect_Item_Count) ? state.systemConfig.Collect_Item_Count : 10;
+                generateExtraObjects(initialCount);
+            }
+            sendUpdate();
             break;
 
         case 'ADD_MONEY':
@@ -883,6 +896,7 @@ function handleTileEvent(pos) {
 }
 
 function checkCollectionEvent(pos) {
+    if (state.collection.enabled === false) return;
     // Logic copied from script.js
     // 4. Extra Objects (Events)
     if (state.extraObjects.has(pos)) {
@@ -980,6 +994,10 @@ function respawnItem() {
 }
 
 function generateExtraObjects(count) {
+    if (state.collection.enabled === false) {
+        state.extraObjects.clear();
+        return;
+    }
     state.extraObjects.clear();
     const available = [];
     for (let i = 0; i < state.properties.length; i++) available.push(i);
