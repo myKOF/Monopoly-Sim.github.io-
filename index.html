@@ -76,7 +76,7 @@
 
                 <!-- Drag Handle (Subtle) -->
                 <button id="board-drag-handle" title="拖動旗盤"
-                    class="absolute -top-8 -left-8 w-4 h-4 bg-white/5 border border-white/10 rounded cursor-move z-[100] hover:bg-emerald-500/20 transition-all group flex items-center justify-center">
+                    class="absolute top-0 -left-8 w-4 h-4 bg-white/5 border border-white/10 rounded cursor-move z-[100] hover:bg-emerald-500/20 transition-all group flex items-center justify-center">
                     <div class="w-1 h-1 bg-white/10 rounded-full group-hover:bg-emerald-400"></div>
                 </button>
 
@@ -255,6 +255,48 @@
         <!-- Activity Panel (Floating Left of Sidebar) -->
         <div id="activity-panel"
             class="absolute top-4 right-[15.25rem] w-48 flex flex-col gap-2 pointer-events-auto z-30 transition-shadow duration-300">
+            <!-- Sync Sync: Volcano Panel inside for synchronization, absolute positioned to maintain alignment -->
+            <div id="volcano-side-panel"
+                class="absolute top-0 right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl overflow-hidden group hover:border-red-500/30 cursor-move active:cursor-grabbing select-none z-30">
+                <!-- Glow Effect -->
+                <div
+                    class="absolute -left-10 -top-10 w-24 h-24 bg-red-500/20 blur-[40px] rounded-full group-hover:bg-red-500/30 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center relative z-10 mb-1">
+                    <h2 class="text-[10px] font-bold text-red-400 uppercase tracking-widest flex items-center gap-1">
+                        <span class="text-base">👤</span>
+                        <div>
+                            <div>警匪追逐賽</div>
+                            <div class="text-[8px] text-gray-400 leading-none">Thief Chase</div>
+                        </div>
+                    </h2>
+                    <div class="text-[10px] font-bold text-gray-400 leading-none">Lv.<span id="volcano-level-disp"
+                            class="text-white text-sm">1</span></div>
+                </div>
+
+                <!-- HP Bar -->
+                <div class="mb-2 relative z-10">
+                    <div class="flex justify-between items-end mb-1">
+                        <div class="text-[9px] text-red-400 font-bold tracking-wider">生命 (HP)</div>
+                        <div class="text-[9px] text-gray-400 font-mono"><span id="volcano-hp-current"
+                                class="text-white font-bold">500</span> / <span id="volcano-hp-max">500</span></div>
+                    </div>
+                    <div class="w-full h-1 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative">
+                        <div id="volcano-hp-bar"
+                            class="h-full bg-gradient-to-r from-red-600 to-red-400 w-full transition-all duration-500 relative">
+                            <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative z-10">
+                    <button id="btn-volcano-open"
+                        class="w-full py-1.5 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-400 hover:to-orange-500 text-white text-xs font-bold rounded shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <span>匪徒清單 (List)</span>
+                    </button>
+                </div>
+            </div>
             <!-- Collection Event Module -->
             <div id="activity-drag-handle"
                 class="w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl relative group hover:border-pink-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
@@ -453,48 +495,6 @@
                 </div>
             </div>
 
-            <!-- Volcano Panel -->
-            <div id="volcano-side-panel"
-                class="w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl relative overflow-hidden group hover:border-red-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none mt-2">
-                <!-- Glow Effect -->
-                <div
-                    class="absolute -left-10 -top-10 w-24 h-24 bg-red-500/20 blur-[40px] rounded-full group-hover:bg-red-500/30 transition-all">
-                </div>
-
-                <div class="flex justify-between items-center relative z-10 mb-1">
-                    <h2 class="text-[10px] font-bold text-red-400 uppercase tracking-widest flex items-center gap-1">
-                        <span class="text-base">👤</span>
-                        <div>
-                            <div>警匪追逐賽</div>
-                            <div class="text-[8px] text-gray-400 leading-none">Thief Chase</div>
-                        </div>
-                    </h2>
-                    <div class="text-[10px] font-bold text-gray-400 leading-none">Lv.<span id="volcano-level-disp"
-                            class="text-white text-sm">1</span></div>
-                </div>
-
-                <!-- HP Bar -->
-                <div class="mb-2 relative z-10">
-                    <div class="flex justify-between items-end mb-1">
-                        <div class="text-[9px] text-red-400 font-bold tracking-wider">生命 (HP)</div>
-                        <div class="text-[9px] text-gray-400 font-mono"><span id="volcano-hp-current"
-                                class="text-white font-bold">500</span> / <span id="volcano-hp-max">500</span></div>
-                    </div>
-                    <div class="w-full h-1 bg-gray-900/50 rounded-full overflow-hidden border border-white/5 relative">
-                        <div id="volcano-hp-bar"
-                            class="h-full bg-gradient-to-r from-red-600 to-red-400 w-full transition-all duration-500 relative">
-                            <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="relative z-10">
-                    <button id="btn-volcano-open"
-                        class="w-full py-1.5 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-400 hover:to-orange-500 text-white text-xs font-bold rounded shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
-                        <span>匪徒清單 (List)</span>
-                    </button>
-                </div>
-            </div>
 
             <!-- Reset UI Button -->
             <button id="btn-reset-ui" title="重置 UI 位置"
@@ -506,6 +506,7 @@
                 </svg>
             </button>
         </div>
+
 
         <!-- Right Sidebar: Stats & Logs -->
         <section id="right-sidebar"

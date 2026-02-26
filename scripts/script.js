@@ -2192,45 +2192,8 @@ enableDraggable(document.getElementById('tournament-panel'), document.getElement
 enableDraggable(document.getElementById('roulette-side-panel'), document.getElementById('roulette-side-panel'));
 enableDraggable(document.getElementById('2048-side-panel'), document.getElementById('2048-side-panel'));
 enableDraggable(document.getElementById('partner-side-panel'), document.getElementById('partner-side-panel'));
-// --- Translate-based draggable (safe for flex children: no position change, no size change) ---
-function makeTranslatable(el) {
-    if (!el) return;
-    let isDragging = false;
-    let startX = 0, startY = 0;
-    let currentX = 0, currentY = 0;
-
-    el.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
-        isDragging = true;
-        startX = e.clientX - currentX;
-        startY = e.clientY - currentY;
-        el.style.transition = 'none'; // Disable animation so it follows mouse instantly (same as enableDraggable)
-        el.style.zIndex = '50';
-        e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        currentX = e.clientX - startX;
-        currentY = e.clientY - startY;
-        el.style.transform = `translate(${currentX}px, ${currentY}px)`;
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
-            el.style.transition = ''; // Restore CSS transition after drag
-            el.style.zIndex = '';
-        }
-    });
-}
-
-// volcano-side-panel uses transform-based drag to avoid size distortion
-makeTranslatable(document.getElementById('volcano-side-panel'));
-
-
-// --- Tournament Reset ---
+enableDraggable(document.getElementById('volcano-side-panel'), document.getElementById('volcano-side-panel'));
+// --- Export Logic ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
 if (btnResetTour) {
     // Prevent drag start
@@ -2302,7 +2265,7 @@ function enableDraggable(el, handle) {
             const dy = e.clientY - startY;
             if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
                 isDragging = true;
-                el.style.transition = 'none';
+                el.style.transition = 'none'; // Disable transition for the dragged element
                 normalizePosition();
 
                 initialLeft = parseFloat(el.style.left) || 0;
@@ -2310,11 +2273,13 @@ function enableDraggable(el, handle) {
 
                 // Track fixed children to apply the same delta (synchronous movement)
                 linkedElements = Array.from(el.children).filter(child => getComputedStyle(child).position === 'fixed').map(child => {
+                    const originalTransition = child.style.transition;
                     child.style.transition = 'none'; // Disable transition to avoid "following" effect
                     return {
                         el: child,
                         initialLeft: parseFloat(child.style.left) || 0,
-                        initialTop: parseFloat(child.style.top) || 0
+                        initialTop: parseFloat(child.style.top) || 0,
+                        originalTransition: originalTransition
                     };
                 });
 
@@ -2346,7 +2311,7 @@ function enableDraggable(el, handle) {
             el.style.transition = ''; // Re-enable transition
             el.classList.remove('z-50');
             linkedElements.forEach(item => {
-                item.el.style.transition = ''; // Restore child element transition
+                item.el.style.transition = item.originalTransition || ''; // Restore child element transition
             });
             linkedElements = [];
         }
@@ -2357,10 +2322,14 @@ function enableDraggable(el, handle) {
 
 
 function resetDraggablePositions() {
-    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel'];
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
+            // [NEW] Disable transition temporarily for instant reset
+            const originalTransition = el.style.transition;
+            el.style.transition = 'none';
+
             el.style.position = '';
             el.style.left = '';
             el.style.top = '';
@@ -2368,6 +2337,11 @@ function resetDraggablePositions() {
             el.style.bottom = '';
             el.style.margin = '';
             el.style.zIndex = '';
+            el.style.transform = '';
+
+            // Force reflow to apply 'none' before restoring
+            void el.offsetHeight;
+            el.style.transition = originalTransition;
         }
     });
 
@@ -2377,7 +2351,7 @@ function resetDraggablePositions() {
         board.style.transform = '';
         // Reset the tracker in script.js to match
         if (typeof boardOffsets !== 'undefined') {
-            boardOffsets.x = 0;
+            boardOffsets.x = -100;
             boardOffsets.y = 0;
         }
     }
@@ -2963,7 +2937,7 @@ if (ui.inputPartnerTokens) {
 
 // Board Dragging Logic
 let isBoardDragging = false;
-let boardOffsets = { x: 0, y: 0 };
+let boardOffsets = { x: -100, y: 0 };
 let boardStartPos = { x: 0, y: 0 };
 
 if (ui.boardDragHandle) {
@@ -3148,3 +3122,30 @@ if (ui.btnVolcanoOpen) {
     ui.btnVolcanoOpen.addEventListener('click', openVolcanoModal);
 }
 if (ui.btnVolcanoClose) ui.btnVolcanoClose.addEventListener('click', closeVolcanoModal);
+
+// --- Antigravity Notification Utility ---
+window.antigravityNotify = function (isFinal) {
+    const originalTitle = document.title;
+    if (!isFinal) {
+        let count = 0;
+        const interval = setInterval(() => {
+            document.title = (document.title === originalTitle) ? '【待確認】' : originalTitle;
+            count++;
+            if (count >= 10) {
+                clearInterval(interval);
+                document.title = originalTitle;
+                setTimeout(() => {
+                    window.close();
+                }, 100);
+            }
+        }, 500);
+    } else {
+        setInterval(() => {
+            document.title = (document.title === originalTitle) ? '【待確認】' : originalTitle;
+        }, 500);
+        // Important: Use setTimeout to ensure title update starts before alert blocks
+        setTimeout(() => {
+            alert('作業已完成，請驗收！');
+        }, 100);
+    }
+};
