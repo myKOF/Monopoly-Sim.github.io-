@@ -54,6 +54,17 @@ let state = {
         multiplier: 1,
         currentCard: null,
         stats: { totalTokensUsed: 0, totalGold: 0, totalGem: 0, totalDice: 0 }
+    },
+    travelEvent: {
+        level: 1,
+        currencyType: 'GOLD', // GOLD or GEM
+        boxes: [], // [{ type, value, isFail, isOpened }]
+        isFailed: false,
+        isTransitioning: false,
+        isFinished: false,
+        stageConfig: [],
+        rewardConfig: [],
+        stats: { totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
     }
 };
 
@@ -211,6 +222,8 @@ self.onmessage = function (e) {
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
             if (payload.dice !== undefined) state.dice = payload.dice;
             if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
+            if (payload.money !== undefined) state.money = payload.money;
+            if (payload.gems !== undefined) state.gems = payload.gems;
             if (payload.rouletteTokens !== undefined) state.roulette.tokens = payload.rouletteTokens; // [NEW] Sync Roulette Tokens
             if (payload.volcanoConfig !== undefined) state.volcano.config = payload.volcanoConfig; // [NEW]
             if (payload.scratchTokens !== undefined) state.scratchCard.tokens = payload.scratchTokens;
@@ -413,6 +426,33 @@ self.onmessage = function (e) {
             break;
         case 'SCRATCH_CARD_RESET':
             generateScratchCard();
+            sendUpdate();
+            break;
+        case 'INIT_TRAVEL_CONFIG':
+            state.travelEvent.stageConfig = payload.stageConfig || [];
+            state.travelEvent.rewardConfig = payload.rewardConfig || [];
+            initTravelEventState();
+            sendUpdate();
+            break;
+        case 'TRAVEL_PICK':
+            handleTravelPick(payload.index);
+            sendUpdate();
+            break;
+        case 'TRAVEL_CONTINUE':
+            handleTravelContinue();
+            sendUpdate();
+            break;
+        case 'TRAVEL_GIVEUP':
+            handleTravelReset();
+            sendUpdate();
+            break;
+        case 'TRAVEL_RESET':
+            handleTravelReset();
+            sendUpdate();
+            break;
+        case 'TRAVEL_SWITCH_CURRENCY':
+            state.travelEvent.currencyType = state.travelEvent.currencyType === 'GOLD' ? 'GEM' : 'GOLD';
+            handleTravelReset(); // Always reset to Level 1 when switching
             sendUpdate();
             break;
     }
@@ -1137,6 +1177,14 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             currentCard: state.scratchCard.currentCard,
             stats: state.scratchCard.stats,
             integralConfig: state.scratchCard.integralConfig
+        },
+        travelEvent: {
+            level: state.travelEvent.level,
+            currencyType: state.travelEvent.currencyType,
+            boxes: state.travelEvent.boxes,
+            isFailed: state.travelEvent.isFailed,
+            stats: state.travelEvent.stats,
+            stageConfig: state.travelEvent.stageConfig
         }
     };
 
@@ -1806,3 +1854,194 @@ function checkScratchIntegral() {
         cfg = sc.integralConfig.find(c => parseInt(c.level) === sc.level);
     }
 }
+
+// ==========================================
+// Traveler Event Logic
+// ==========================================
+
+function initTravelEventState() {
+    const te = state.travelEvent;
+    te.level = 1;
+    te.isFailed = false;
+    te.isTransitioning = false;
+    te.isFinished = false;
+    generateTravelBoxes();
+}
+
+function generateTravelBoxes() {
+    const te = state.travelEvent;
+    const level = te.level;
+    const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+
+    const boxes = [];
+
+    // We have 4 boxes (count 1 to 4)
+    for (let i = 1; i <= 4; i++) {
+        // Filter rewards for this group, level, and box index (count)
+        let pool = te.rewardConfig.filter(r =>
+            parseInt(r.group) === currentGroupId &&
+            parseInt(r.level) === level &&
+            parseInt(r.count) === i
+        );
+
+        // Fallback: if no specific pool for this level, try any level for this count/group
+        if (pool.length === 0) {
+            pool = te.rewardConfig.filter(r =>
+                parseInt(r.group) === currentGroupId &&
+                parseInt(r.count) === i
+            );
+        }
+
+        const reward = pickWeightedTravelReward(pool);
+        const isClown = reward ? reward.reward_type.toUpperCase() === 'NONE' : false;
+
+        boxes.push({
+            type: isClown ? 'FAIL' : (reward ? reward.reward_type.toUpperCase() : 'COIN'),
+            value: reward ? parseInt(reward.reward_value) : 0,
+            isFail: isClown,
+            isOpened: false
+        });
+    }
+
+    // Shuffle the 4 boxes so the outcomes are randomized across positions
+    te.boxes = boxes.sort(() => Math.random() - 0.5);
+}
+
+function pickWeightedTravelReward(pool) {
+    if (!pool || pool.length === 0) return null;
+    const totalWeight = pool.reduce((sum, r) => sum + (parseInt(r.weight) || 1), 0);
+    let random = Math.random() * totalWeight;
+    for (const r of pool) {
+        random -= (parseInt(r.weight) || 1);
+        if (random <= 0) return r;
+    }
+    return pool[pool.length - 1];
+}
+
+function handleTravelPick(index) {
+    const te = state.travelEvent;
+    if (te.isFailed || te.isFinished || te.isTransitioning || te.boxes[index].isOpened) return;
+
+    const box = te.boxes[index];
+    box.isOpened = true;
+
+    if (box.isFail) {
+        te.isFailed = true;
+        sendUpdate();
+    } else {
+        // Success: Grant box reward
+        if (box.value > 0) {
+            grantTravelReward(box.type, box.value);
+        }
+
+        // Milestone reward from stageConfig (reward_probability check)
+        const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+        const stageCfg = te.stageConfig.find(s => parseInt(s.level) === te.level && parseInt(s.group) === currentGroupId);
+
+        if (stageCfg && stageCfg.reward_type && stageCfg.reward_type.toUpperCase() !== 'NONE') {
+            const prob = parseFloat(stageCfg.reward_probability) || 0;
+            if (Math.random() < prob) {
+                grantTravelReward(stageCfg.reward_type.toUpperCase(), parseInt(stageCfg.reward_value), true);
+            }
+        }
+
+        // Show box reward before transitioning
+        te.isTransitioning = true;
+        sendUpdate();
+
+        const delayMs = (parseFloat(state.systemConfig.Travel_Stage_Time) || 1) * 1000;
+        setTimeout(() => {
+            if (te.level < 20) {
+                te.level++;
+                generateTravelBoxes();
+            } else {
+                // [FIX] All Stages Cleared
+                te.isFinished = true;
+                te.isFailed = false;
+                te.boxes = []; // Clear boxes so they disappear from UI loop
+            }
+            te.isTransitioning = false;
+            sendUpdate();
+        }, delayMs);
+    }
+}
+
+function handleTravelContinue() {
+    const te = state.travelEvent;
+    if (!te.isFailed) return;
+
+    const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+    const stageCfg = te.stageConfig.find(s => parseInt(s.level) === te.level && parseInt(s.group) === currentGroupId);
+
+    if (!stageCfg) {
+        te.isFailed = false; // Fallback
+        sendUpdate();
+        return;
+    }
+
+    const cost = parseInt(stageCfg.pay_value);
+    const payType = stageCfg.pay_type.toUpperCase(); // COIN or GEM
+
+    if (payType === 'COIN') {
+        if (state.money >= cost) {
+            state.money -= cost;
+            te.stats.totalSpentGold += cost;
+            te.isFailed = false;
+            recordLog({ turn: state.turn, position: state.position, event: "TRAVEL_CONTINUE", delta_gold: -cost, current_balance: state.money, detail: `旅行家活動：花費 ${cost} 金幣接關` });
+            sendUpdate();
+        } else {
+            self.postMessage({ type: 'TRAVEL_INSUFFICIENT_FUNDS', payload: { currency: 'COIN' } });
+        }
+    } else if (payType === 'GEM') {
+        if (state.gems >= cost) {
+            state.gems -= cost;
+            te.stats.totalSpentGem += cost;
+            te.isFailed = false;
+            recordLog({ turn: state.turn, position: state.position, event: "TRAVEL_CONTINUE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動：花費 ${cost} 寶石接關` });
+            sendUpdate();
+        } else {
+            self.postMessage({ type: 'TRAVEL_INSUFFICIENT_FUNDS', payload: { currency: 'GEM' } });
+        }
+    }
+}
+
+function handleTravelReset() {
+    const te = state.travelEvent;
+    te.level = 1;
+    te.isFailed = false;
+    te.isTransitioning = false;
+    te.isFinished = false;
+    generateTravelBoxes();
+    sendUpdate();
+}
+
+function handleTravelGiveup() {
+    const te = state.travelEvent;
+    te.level = 1;
+    te.isFailed = false;
+    te.isTransitioning = false;
+    generateTravelBoxes();
+    sendUpdate();
+}
+
+function grantTravelReward(type, value, isMilestone = false) {
+    const te = state.travelEvent;
+    const source = isMilestone ? "關卡獎勵" : "開箱獎勵";
+    const mappedType = type.toUpperCase() === 'COIN' ? 'GOLD' : type.toUpperCase();
+
+    if (mappedType === 'GOLD') {
+        addMoney(value, 'TRAVEL_EVENT', `旅行家活動 ${source}：金幣 ${value}`);
+        te.stats.totalEarnedGold += value;
+    } else if (mappedType === 'GEM') {
+        state.gems += value;
+        te.stats.totalEarnedGem += value;
+        recordLog({ turn: state.turn, position: state.position, event: "GEM", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：寶石 ${value}` });
+    } else if (mappedType === 'DICE') {
+        state.dice += value;
+        state.totalEarnedDice += value;
+        te.stats.totalEarnedDice += value;
+        state.earnedDiceBreakdown['旅行家'] = (state.earnedDiceBreakdown['旅行家'] || 0) + value;
+        recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：骰子 ${value}` });
+    }
+}
+

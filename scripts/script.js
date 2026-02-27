@@ -77,6 +77,41 @@ function parseVolcanoCSV(text) {
     }).filter(x => x);
 }
 
+function parseTravelStageCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 8) return null;
+        return {
+            group: parseInt(cols[0]),
+            level: parseInt(cols[1]),
+            reward_probability: parseFloat(cols[2]),
+            reward_type: cols[3],
+            reward_spec: cols[4],
+            reward_value: parseInt(cols[5]),
+            pay_type: cols[6],
+            pay_value: parseInt(cols[7])
+        };
+    }).filter(x => x);
+}
+
+function parseTravelRewardCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 7) return null;
+        return {
+            group: parseInt(cols[0]),
+            level: parseInt(cols[1]),
+            count: parseInt(cols[2]),
+            reward_type: cols[3],
+            reward_spec: cols[4],
+            reward_value: parseInt(cols[5]),
+            weight: parseInt(cols[6])
+        };
+    }).filter(x => x);
+}
+
 // [NEW] Parse Roulette CSV
 function parseRouletteCSV(csvText) {
     const lines = csvText.trim().split('\n');
@@ -374,6 +409,42 @@ const ui = {
     statScratchGold: document.getElementById('scratch-stat-gold'),
     btnScratchReset: document.getElementById('btn-scratch-reset-activity'),
     scratchPermanentRewards: document.getElementById('scratch-permanent-rewards'),
+
+    // [NEW] Traveler Event DOM Elements
+    btnTravelerOpen: document.getElementById('btn-traveler-open'),
+    modalTraveler: document.getElementById('traveler-modal'),
+    btnCloseTraveler: document.getElementById('btn-traveler-close'),
+    travelerLevelDisp: document.getElementById('traveler-level-disp'),
+    travelerProgressBar: document.getElementById('traveler-progress-bar'),
+    travelerMilestones: document.getElementById('traveler-milestones'),
+    travelerLevels: document.getElementById('traveler-levels'),
+    travelerBoxGrid: document.getElementById('traveler-box-grid'),
+    travelerStatSpentGold: document.getElementById('traveler-stat-spent-gold'),
+    travelerStatSpentGem: document.getElementById('traveler-stat-spent-gem'),
+    travelerStatEarnedDice: document.getElementById('traveler-stat-earned-dice'),
+    travelerStatEarnedGem: document.getElementById('traveler-stat-earned-gem'),
+    travelerStatEarnedGold: document.getElementById('traveler-stat-earned-gold'),
+    travelerHeaderGold: document.getElementById('traveler-header-gold'),
+    travelerHeaderGem: document.getElementById('traveler-header-gem'),
+    travelerCurrentCurrency: document.getElementById('traveler-current-currency'),
+    btnTravelerContinue: document.getElementById('btn-traveler-continue'),
+    btnTravelerGiveup: document.getElementById('btn-traveler-giveup'),
+    btnTravelerReset: document.getElementById('btn-traveler-reset'),
+    btnTravelerAuto: document.getElementById('btn-traveler-auto'),
+    btnTravelerSwitchCurrency: document.getElementById('btn-traveler-switch-currency'),
+    travelerFailOverlay: document.getElementById('traveler-fail-overlay'),
+    travelerContinueCost: document.getElementById('traveler-continue-cost'),
+    travelerSpeed: document.getElementById('traveler-speed'),
+    dialogTravelerConfirm: document.getElementById('traveler-confirm-dialog'),
+    btnTravelerConfirmYes: document.getElementById('btn-traveler-confirm-yes'),
+    btnTravelerConfirmNo: document.getElementById('btn-traveler-confirm-no'),
+    dialogTravelerCost: document.getElementById('traveler-dialog-cost'),
+    dialogTravelerInsufficient: document.getElementById('traveler-insufficient-dialog'),
+    btnTravelerBuyYes: document.getElementById('btn-traveler-buy-yes'),
+    btnTravelerBuyNo: document.getElementById('btn-traveler-buy-no'),
+    travelerInsufficientMsg: document.getElementById('traveler-insufficient-msg'),
+    travelerInsufficientIcon: document.getElementById('traveler-insufficient-icon'),
+    travelerFinishedMsg: document.getElementById('traveler-finished-msg'),
 };
 
 const FALLBACK_DATA = [
@@ -423,12 +494,20 @@ function workerMessageHandler(e) {
         if (payload.partnerGame) state.partnerGame = payload.partnerGame;
         if (payload.game2048) { state.game2048 = payload.game2048; render2048(); }
         if (payload.roulette) {
-            state.roulette = payload.roulette;
+            // [FIX] Buffer new state if it's a level up so we don't clear the board before animation finishes
+            if (payload.roulette.lastSpinResult && payload.roulette.lastSpinResult.levelUp) {
+                state.pendingRouletteState = payload.roulette;
+                // Sync tokens immediately so input deduction is visible
+                state.roulette.tokens = payload.roulette.tokens;
+            } else {
+                state.roulette = payload.roulette;
+            }
             updateRouletteUI();
             if (payload.roulette.lastSpinResult) animateRoulette(payload.roulette.lastSpinResult);
         }
         if (payload.volcano) { state.volcano = payload.volcano; updateVolcanoUI(); }
         if (payload.scratchCard) { state.scratchCard = payload.scratchCard; updateScratchUI(); }
+        if (payload.travelEvent) { state.travelEvent = payload.travelEvent; renderTravelerEvent(); }
 
         updateLogs(payload.logs);
 
@@ -454,6 +533,10 @@ function workerMessageHandler(e) {
             state.position = payload.position;
             updateDynamicUI(); updateUI(); updateStatsUI();
         }
+    }
+
+    if (type === 'TRAVEL_INSUFFICIENT_FUNDS') {
+        showTravelerInsufficientFundsDialog(payload.currency);
     }
 
     if (type === 'AUTO_STOPPED') {
@@ -681,6 +764,23 @@ async function initGame() {
             rouletteIntegralConfig = parseRouletteIntegralCSV(textIntegral);
             console.log("Roulette Integral Config Loaded:", rouletteIntegralConfig);
         }
+
+        // 4. Load Traveler Config (New)
+        let travelStageConfig = [];
+        let travelRewardConfig = [];
+        try {
+            const resStage = await fetch('./config/travel_stage.csv');
+            if (resStage.ok) travelStageConfig = parseTravelStageCSV(await resStage.text());
+
+            const resReward = await fetch('./config/travel_reward.csv');
+            if (resReward.ok) travelRewardConfig = parseTravelRewardCSV(await resReward.text());
+
+            worker.postMessage({
+                type: 'INIT_TRAVEL_CONFIG',
+                payload: { stageConfig: travelStageConfig, rewardConfig: travelRewardConfig }
+            });
+        } catch (e) { console.warn("Traveler Config Load Failed", e); }
+
     } catch (e) {
         console.warn("Roulette Config Load Failed", e);
     }
@@ -1397,6 +1497,13 @@ function animateRoulette(targetItem) {
                         } else if (rouletteInterval && state.roulette.tokens < 1) {
                             toggleAutoRoulette(); // Stop
                         }
+                    } else {
+                        // Fallback: Proceed to auto chain even if pending state was missing
+                        if (rouletteInterval && state.roulette.tokens > 0) {
+                            reliableSetTimeout(() => spinRoulette(true), document.hidden ? 0 : Math.max(100, Math.floor(1000 / speedMult)));
+                        } else if (rouletteInterval && state.roulette.tokens < 1) {
+                            toggleAutoRoulette(); // Stop
+                        }
                     }
                 }, waitTime); // Scale delay down before wiping the board to next level
             } else {
@@ -1724,7 +1831,7 @@ function renderCollectionRewardsList() {
         if (item.gem > 0) rewards.push(`💎${item.gem.toLocaleString()}`);
         if (item.dice > 0) rewards.push(`🎲${item.dice.toLocaleString()}`);
 
-        const statusClass = isCompleted ? 'opacity-50 grayscale' : (isCurrent ? 'ring-2 ring-pink-500 bg-pink-500/15' : 'bg-white/10');
+        const statusClass = isCompleted ? 'opacity-50 grayscale' : (isCurrent ? 'bg-pink-500/15' : 'bg-white/10');
         const checkmark = isCompleted ? '<span class="text-neon-green text-lg ml-auto">✓</span>' : '';
         const currentTag = isCurrent ? '<span class="text-[9px] font-bold bg-pink-500 text-white px-2 py-0.5 rounded ml-auto animate-pulse shadow-lg shadow-pink-500/20">CURRENT</span>' : '';
 
@@ -1884,10 +1991,204 @@ function renderPartnerGame() {
     }
 }
 
+let travelerAutoActive = false;
+let travelerAutoTimer = null;
+
+function handleTravelerAuto() {
+    const te = state.travelEvent;
+    if (!te || !travelerAutoActive) {
+        if (travelerAutoTimer) { clearTimeout(travelerAutoTimer); travelerAutoTimer = null; }
+        if (ui.btnTravelerAuto) {
+            const dot = ui.btnTravelerAuto.querySelector('div');
+            if (dot) {
+                dot.className = "w-1.5 h-1.5 rounded-full bg-gray-500 shadow-none";
+            }
+        }
+        return;
+    }
+
+    if (ui.btnTravelerAuto) {
+        const dot = ui.btnTravelerAuto.querySelector('div');
+        if (dot) {
+            dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
+        }
+    }
+
+    // Start loop if not running
+    if (!travelerAutoTimer) {
+        runTravelerAutoLoop();
+    }
+}
+
+function runTravelerAutoLoop() {
+    if (!travelerAutoActive) {
+        travelerAutoTimer = null;
+        return;
+    }
+
+    const currentTe = state.travelEvent;
+    const speed = parseInt(ui.travelerSpeed ? ui.travelerSpeed.value : 1);
+    let delay = Math.max(10, 800 / speed);
+
+    if (currentTe) {
+        if (currentTe.isFailed) {
+            // Check for dialogs and failure overlay
+            delay = 1000; // 1 second interval for auto actions as requested
+            if (ui.dialogTravelerInsufficient && !ui.dialogTravelerInsufficient.classList.contains('hidden')) {
+                ui.btnTravelerBuyYes.click();
+            } else if (ui.dialogTravelerConfirm && !ui.dialogTravelerConfirm.classList.contains('hidden')) {
+                ui.btnTravelerConfirmYes.click();
+            } else if (ui.btnTravelerContinue && !ui.btnTravelerContinue.classList.contains('hidden')) {
+                ui.btnTravelerContinue.click();
+            }
+        } else if (!currentTe.isFinished && !currentTe.isTransitioning) {
+            const unopenedIndices = currentTe.boxes.map((b, i) => b.isOpened ? -1 : i).filter(i => i !== -1);
+            if (unopenedIndices.length > 0) {
+                const randomIdx = unopenedIndices[Math.floor(Math.random() * unopenedIndices.length)];
+                worker.postMessage({ type: 'TRAVEL_PICK', payload: { index: randomIdx } });
+            }
+        }
+    }
+
+    travelerAutoTimer = setTimeout(runTravelerAutoLoop, delay);
+}
+
+function renderTravelerEvent() {
+    const te = state.travelEvent;
+    if (!te) return;
+
+    if (ui.travelerHeaderGold) ui.travelerHeaderGold.textContent = state.money.toLocaleString();
+    if (ui.travelerHeaderGem) ui.travelerHeaderGem.textContent = (state.gems || 0).toLocaleString();
+
+    const displayLevel = Math.min(te.level, 20);
+    if (ui.travelerLevelDisp) ui.travelerLevelDisp.textContent = `STAGE ${displayLevel}`;
+    if (ui.travelerCurrentCurrency) ui.travelerCurrentCurrency.textContent = te.currencyType;
+
+    const startLevel = Math.floor((displayLevel - 1) / 5) * 5 + 1;
+    const endLevel = startLevel + 4;
+    const pct = ((displayLevel - startLevel) / 4) * 100;
+    if (ui.travelerProgressBar) ui.travelerProgressBar.style.width = `${Math.min(pct, 100)}%`;
+
+    if (ui.travelerMilestones && ui.travelerLevels) {
+        let milestoneHtml = '';
+        let levelHtml = '';
+        const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+
+        for (let l = startLevel; l <= endLevel; l++) {
+            const mCfg = te.stageConfig.find(s => parseInt(s.level) === l && parseInt(s.group) === currentGroupId);
+            const isActive = l === displayLevel;
+            const isCompleted = l < displayLevel;
+
+            let hasReward = mCfg && mCfg.reward_type && mCfg.reward_type.toUpperCase() !== 'NONE';
+
+            // 1. Milestone Reward Icons (Above Bar)
+            if (hasReward) {
+                let rewardIcon = '🎁';
+                const rt = mCfg.reward_type.toUpperCase();
+                if (rt === 'COIN' || rt === 'GOLD') rewardIcon = '💰';
+                if (rt === 'GEM') rewardIcon = '💎';
+                if (rt === 'DICE') rewardIcon = '🎲';
+
+                milestoneHtml += `
+                    <div class="flex flex-col items-center justify-center w-10 transition-all duration-500 ${isCompleted ? 'text-emerald-400 opacity-60' : isActive ? 'text-white scale-110 shadow-lg' : 'text-white/40'}">
+                        <div class="w-10 h-10 rounded-xl flex flex-col items-center justify-center text-sm font-black border-2 transition-all 
+                            ${isCompleted ? 'bg-emerald-500/10 border-emerald-500/30' : isActive ? 'bg-white/10 border-white/40' : 'bg-black/20 border-white/10'}">
+                            <span class="text-xs">${rewardIcon}</span>
+                            <span class="text-[7px] font-black mt-0.5">${mCfg.reward_value}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Empty placeholder to maintain spacing
+                milestoneHtml += `<div class="w-10"></div>`;
+            }
+
+            // 2. Level Numbers (Below Bar)
+            levelHtml += `
+                <div class="w-10 flex flex-col items-center transition-all duration-500 ${isCompleted ? 'text-emerald-400' : isActive ? 'text-white font-black scale-110' : 'text-gray-600'}">
+                    <span class="text-[10px] uppercase tracking-tighter">${l}</span>
+                </div>
+            `;
+        }
+        ui.travelerMilestones.innerHTML = milestoneHtml;
+        ui.travelerLevels.innerHTML = levelHtml;
+    }
+
+    if (ui.travelerBoxGrid) {
+        if (te.isFinished) {
+            ui.travelerBoxGrid.style.display = 'none';
+        } else {
+            ui.travelerBoxGrid.style.display = 'grid'; // Restore as grid
+            ui.travelerBoxGrid.innerHTML = '';
+            te.boxes.forEach((box, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `aspect-square rounded-2xl border-2 shadow-xl transition-all flex flex-col items-center justify-center gap-2 group relative overflow-hidden ${box.isOpened ? 'bg-black/20 border-black/10 cursor-default' : 'bg-slate-800 border-white/5 hover:border-emerald-500/50 active:scale-95'}`;
+
+                if (box.isOpened) {
+                    if (box.isFail) {
+                        btn.innerHTML = `<div class="flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+                            <div class="text-4xl mb-1">🤡</div>
+                            <div class="text-[9px] font-black text-red-500 uppercase tracking-widest">FAIL</div>
+                        </div>`;
+                    } else {
+                        let icon = '🎲';
+                        if (box.type === 'GOLD' || box.type === 'COIN') icon = '💰';
+                        if (box.type === 'GEM') icon = '💎';
+                        btn.innerHTML = `<div class="flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+                            <div class="text-3xl mb-1">${icon}</div>
+                            <div class="text-[9px] font-black text-emerald-400 uppercase tracking-widest">+${box.value.toLocaleString()}</div>
+                        </div>`;
+                    }
+                } else {
+                    btn.innerHTML = `<div class="text-4xl group-hover:scale-110 transition-transform">🎁</div>
+                                    <div class="text-[9px] font-black text-gray-500 uppercase tracking-widest">BOX ${idx + 1}</div>`;
+                    btn.onclick = () => {
+                        worker.postMessage({ type: 'TRAVEL_PICK', payload: { index: idx } });
+                    };
+                }
+                ui.travelerBoxGrid.appendChild(btn);
+            });
+        }
+    }
+
+    if (ui.travelerFinishedMsg) {
+        if (te.isFinished) {
+            ui.travelerFinishedMsg.style.display = 'flex'; // Show as flex
+            ui.travelerFinishedMsg.classList.remove('hidden');
+        } else {
+            ui.travelerFinishedMsg.style.display = 'none';
+            ui.travelerFinishedMsg.classList.add('hidden');
+        }
+    }
+
+    if (ui.travelerFailOverlay) {
+        if (te.isFailed) {
+            ui.travelerFailOverlay.classList.remove('hidden');
+            setTimeout(() => ui.travelerFailOverlay.classList.add('opacity-100'), 10);
+
+            const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+            const stageCfg = te.stageConfig.find(s => parseInt(s.level) === te.level && parseInt(s.group) === currentGroupId);
+            const cost = stageCfg ? parseInt(stageCfg.pay_value) : 5000;
+            if (ui.travelerContinueCost) ui.travelerContinueCost.textContent = (te.currencyType === 'GOLD' ? '$' : '💎') + cost.toLocaleString();
+        } else {
+            ui.travelerFailOverlay.classList.remove('opacity-100');
+            setTimeout(() => ui.travelerFailOverlay.classList.add('hidden'), 300);
+        }
+    }
+
+    if (ui.travelerStatSpentGold) ui.travelerStatSpentGold.textContent = te.stats.totalSpentGold.toLocaleString();
+    if (ui.travelerStatSpentGem) ui.travelerStatSpentGem.textContent = te.stats.totalSpentGem.toLocaleString();
+    if (ui.travelerStatEarnedDice) ui.travelerStatEarnedDice.textContent = te.stats.totalEarnedDice.toLocaleString();
+    if (ui.travelerStatEarnedGem) ui.travelerStatEarnedGem.textContent = te.stats.totalEarnedGem.toLocaleString();
+    if (ui.travelerStatEarnedGold) ui.travelerStatEarnedGold.textContent = te.stats.totalEarnedGold.toLocaleString();
+
+    handleTravelerAuto();
+}
+
 function updateUI() {
-    if (ui.money) ui.money.textContent = state.money.toLocaleString();
+    if (ui.money && document.activeElement !== ui.money) ui.money.value = state.money;
     if (ui.turn) ui.turn.textContent = state.turn;
-    if (ui.gems) ui.gems.textContent = (state.gems || 0).toLocaleString();
+    if (ui.gems && document.activeElement !== ui.gems) ui.gems.value = state.gems || 0;
 
     // [NEW] Update Earned/Spent Dice
     if (ui.earnedDice) ui.earnedDice.textContent = (state.totalEarnedDice || 0).toLocaleString();
@@ -2214,6 +2515,7 @@ enableDraggable(document.getElementById('2048-side-panel'), document.getElementB
 enableDraggable(document.getElementById('partner-side-panel'), document.getElementById('partner-side-panel'));
 enableDraggable(document.getElementById('volcano-side-panel'), document.getElementById('volcano-side-panel'));
 enableDraggable(document.getElementById('scratch-card-side-panel'), document.getElementById('scratch-card-side-panel'));
+enableDraggable(document.getElementById('activity-traveler-panel'), document.getElementById('activity-traveler-panel'));
 // --- Export Logic ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
 if (btnResetTour) {
@@ -2343,7 +2645,7 @@ function enableDraggable(el, handle) {
 
 
 function resetDraggablePositions() {
-    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel'];
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel', 'activity-traveler-panel'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -2972,6 +3274,20 @@ if (ui.inputPartnerTokens) {
     });
 }
 
+if (ui.money) {
+    ui.money.addEventListener('change', () => {
+        const val = parseInt(ui.money.value) || 0;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { money: val } });
+    });
+}
+
+if (ui.gems) {
+    ui.gems.addEventListener('change', () => {
+        const val = parseInt(ui.gems.value) || 0;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { gems: val } });
+    });
+}
+
 // Board Dragging Logic
 let isBoardDragging = false;
 let boardOffsets = { x: -100, y: 0 };
@@ -3424,4 +3740,166 @@ function runScratchAuto() {
         scratchAutoTimer = setTimeout(runScratchAuto, Math.max(5, Math.round(500 / scratchSpeed)));
     }
 }
+
+// --- Traveler Event Event Listeners ---
+if (ui.btnTravelerOpen) {
+    ui.btnTravelerOpen.addEventListener('click', () => {
+        ui.modalTraveler.classList.remove('hidden');
+        if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
+        setTimeout(() => {
+            ui.modalTraveler.classList.add('opacity-100');
+            const content = ui.modalTraveler.querySelector('.traveler-modal-content');
+            if (content) {
+                content.style.transform = 'scale(1)';
+                content.style.opacity = '1';
+            }
+        }, 10);
+        renderTravelerEvent();
+    });
+}
+
+if (ui.btnCloseTraveler) {
+    ui.btnCloseTraveler.addEventListener('click', () => {
+        ui.modalTraveler.classList.remove('opacity-100');
+        const content = ui.modalTraveler.querySelector('.traveler-modal-content');
+        if (content) {
+            content.style.transform = 'scale(0.9)';
+            content.style.opacity = '0';
+        }
+        setTimeout(() => {
+            ui.modalTraveler.classList.add('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
+        }, 300);
+    });
+}
+
+if (ui.btnTravelerAuto) {
+    ui.btnTravelerAuto.addEventListener('click', () => {
+        travelerAutoActive = !travelerAutoActive;
+        handleTravelerAuto();
+    });
+}
+
+if (ui.btnTravelerContinue) {
+    ui.btnTravelerContinue.addEventListener('click', () => {
+        const te = state.travelEvent;
+        if (!te) return;
+
+        ui.dialogTravelerConfirm.classList.remove('hidden');
+
+        // Correct lookup using new CSV structure
+        const currentGroupId = te.currencyType === 'GOLD' ? 1 : 2;
+        const stageCfg = te.stageConfig.find(s => parseInt(s.level) === te.level && parseInt(s.group) === currentGroupId);
+        const cost = stageCfg ? parseInt(stageCfg.pay_value) : 0;
+
+        if (ui.dialogTravelerCost) {
+            ui.dialogTravelerCost.textContent = (te.currencyType === 'GOLD' ? '$' : '💎') + cost.toLocaleString();
+        }
+
+        setTimeout(() => {
+            ui.dialogTravelerConfirm.classList.add('opacity-100');
+            const box = ui.dialogTravelerConfirm.querySelector('.traveler-dialog-content');
+            if (box) box.style.transform = 'scale(1)';
+        }, 10);
+    });
+}
+
+if (ui.btnTravelerGiveup) {
+    ui.btnTravelerGiveup.addEventListener('click', () => {
+        worker.postMessage({ type: 'TRAVEL_GIVEUP' });
+    });
+}
+
+if (ui.btnTravelerReset) {
+    ui.btnTravelerReset.addEventListener('click', () => {
+        if (confirm("確定要重置旅行家活動嗎？\n這將會清除當前進度並回到第 1 關。")) {
+            worker.postMessage({ type: 'TRAVEL_RESET' });
+        }
+    });
+}
+
+if (ui.btnTravelerSwitchCurrency) {
+    ui.btnTravelerSwitchCurrency.addEventListener('click', () => {
+        worker.postMessage({ type: 'TRAVEL_SWITCH_CURRENCY' });
+    });
+}
+
+if (ui.btnTravelerConfirmYes) {
+    ui.btnTravelerConfirmYes.addEventListener('click', () => {
+        worker.postMessage({ type: 'TRAVEL_CONTINUE' });
+        closeTravelerDialog();
+    });
+}
+
+if (ui.btnTravelerConfirmNo) {
+    ui.btnTravelerConfirmNo.addEventListener('click', () => {
+        closeTravelerDialog();
+    });
+}
+
+function closeTravelerDialog() {
+    ui.dialogTravelerConfirm.classList.remove('opacity-100');
+    const box = ui.dialogTravelerConfirm.querySelector('.traveler-dialog-content');
+    if (box) box.style.transform = 'scale(0.9)';
+    setTimeout(() => ui.dialogTravelerConfirm.classList.add('hidden'), 300);
+}
+
+function showTravelerInsufficientFundsDialog(currency) {
+    // First close the confirm dialog
+    closeTravelerDialog();
+
+    ui.dialogTravelerInsufficient.classList.remove('hidden');
+    if (ui.travelerInsufficientIcon) ui.travelerInsufficientIcon.textContent = currency === 'COIN' ? '💰' : '💎';
+    if (ui.travelerInsufficientMsg) ui.travelerInsufficientMsg.textContent = `您的${currency === 'COIN' ? '金幣' : '寶石'}不足，是否要購買更多資源繼續挑戰？`;
+
+    setTimeout(() => {
+        ui.dialogTravelerInsufficient.classList.add('opacity-100');
+        const content = ui.dialogTravelerInsufficient.querySelector('.traveler-insufficient-content');
+        if (content) content.style.transform = 'scale(1)';
+    }, 10);
+}
+
+function closeTravelerInsufficientDialog() {
+    ui.dialogTravelerInsufficient.classList.remove('opacity-100');
+    const content = ui.dialogTravelerInsufficient.querySelector('.traveler-insufficient-content');
+    if (content) content.style.transform = 'scale(0.9)';
+    setTimeout(() => ui.dialogTravelerInsufficient.classList.add('hidden'), 300);
+}
+
+if (ui.btnTravelerBuyYes) {
+    ui.btnTravelerBuyYes.addEventListener('click', () => {
+        const currency = ui.travelerInsufficientIcon.textContent === '💰' ? 'COIN' : 'GEM';
+        const amount = currency === 'COIN' ? 1000000 : 10000;
+
+        if (currency === 'COIN') {
+            worker.postMessage({ type: 'ADD_MONEY', payload: { amount, reason: 'PURCHASE', desc: '快速購買金幣' } });
+        } else {
+            worker.postMessage({ type: 'UPDATE_CONFIG', payload: { gems: (state.gems || 0) + amount } });
+            // Add a log for gems too
+            worker.postMessage({ type: 'ADD_RESOURCES', payload: { gem: 0, gemDesc: `購買獲得：寶石 ${amount}`, gemEvent: 'GEM_PURCHASE' } });
+            // wait, above ADD_RESOURCES logic is a bit weird, let's just use UPDATE_CONFIG for gems
+        }
+
+        closeTravelerInsufficientDialog();
+        // Automatically try to open confirm dialog again after a short delay
+        setTimeout(() => {
+            if (ui.btnTravelerContinue) ui.btnTravelerContinue.click();
+        }, 500);
+    });
+}
+
+if (ui.btnTravelerBuyNo) {
+    ui.btnTravelerBuyNo.addEventListener('click', () => {
+        closeTravelerInsufficientDialog();
+    });
+}
+
+if (ui.travelerSpeed) {
+    ui.travelerSpeed.addEventListener('change', () => {
+        if (travelerAutoActive) {
+            handleTravelerAuto(); // Restart with new delay
+        }
+    });
+}
+
 
