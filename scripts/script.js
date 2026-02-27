@@ -343,14 +343,29 @@ const ui = {
     // [NEW] Partner Game DOM Elements
     btnPartnerOpen: document.getElementById('btn-partner-open'),
     modalPartner: document.getElementById('partner-modal'),
-    btnClosePartner: document.getElementById('btn-close-partner'),
-    inputPartnerTokens: document.getElementById('partner-tokens'),
-    btnPartnerMultToggle: document.getElementById('btn-partner-multiplier-toggle'),
-    partnerMultDropdown: document.getElementById('partner-multiplier-dropdown'),
-    dispPartnerCurrentMult: document.getElementById('current-partner-multiplier'),
-    statPartnerTotalTokens: document.getElementById('stat-partner-total-tokens'),
-    statPartnerSpentTokens: document.getElementById('stat-partner-spent-tokens'),
-    statPartnerTotalScore: document.getElementById('stat-partner-total-score')
+    statPartnerTotalScore: document.getElementById('stat-partner-total-score'),
+
+    // [NEW] Scratch Card DOM Elements
+    btnScratchOpen: document.getElementById('btn-scratch-open'),
+    modalScratch: document.getElementById('scratch-card-modal'),
+    btnCloseScratch: document.getElementById('btn-scratch-close'),
+    gridScratch: document.getElementById('scratch-grid'),
+    scratchTargets: document.getElementById('scratch-targets-container'),
+    scratchLevel: document.getElementById('scratch-level'),
+    scratchPoints: document.getElementById('scratch-points'),
+    scratchTargetPoints: document.getElementById('scratch-target-points'),
+    scratchBar: document.getElementById('scratch-progress-bar'),
+    btnScratchAuto: document.getElementById('btn-scratch-auto'),
+    dotScratchAuto: document.getElementById('scratch-auto-dot'),
+    btnScratchMult: document.getElementById('btn-scratch-multiplier'),
+    dispScratchMult: document.getElementById('scratch-multiplier-val'),
+    scratchTokens: document.getElementById('scratch-modal-tokens'),
+    scratchSideTokens: document.getElementById('scratch-token-display'),
+    statScratchTokens: document.getElementById('scratch-stat-tokens'),
+    statScratchDice: document.getElementById('scratch-stat-dice'),
+    statScratchGem: document.getElementById('scratch-stat-gem'),
+    statScratchGold: document.getElementById('scratch-stat-gold'),
+    btnScratchReset: document.getElementById('btn-scratch-reset-activity'),
 };
 
 const FALLBACK_DATA = [
@@ -379,7 +394,7 @@ function workerMessageHandler(e) {
 
     if (type === 'UPDATE_UI') {
         const previousPosition = state.position;
-        const steps = payload.diceRoll || 0; // [FIX] Worker sends 'diceRoll', not 'steps'
+        const steps = payload.diceRoll || 0;
         const isAuto = payload.isAuto;
 
         // Sync Data
@@ -394,187 +409,72 @@ function workerMessageHandler(e) {
         if (payload.earnedDiceBreakdown !== undefined) state.earnedDiceBreakdown = payload.earnedDiceBreakdown;
         if (payload.spentDiceBreakdown !== undefined) state.spentDiceBreakdown = payload.spentDiceBreakdown;
         if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
-        if (payload.gems !== undefined) {
-            state.gems = payload.gems;
-        }
+        if (payload.gems !== undefined) state.gems = payload.gems;
 
-        // [NEW] Partner Game State Sync
-        if (payload.partnerGame) {
-            state.partnerGame = payload.partnerGame;
-        }
-
-        // [NEW] 2048 State Sync
-        if (payload.game2048) {
-            state.game2048 = payload.game2048;
-            render2048();
-            update2048PreviewBar();
-        }
-
-        // [NEW] Roulette State Sync
+        // Feature Sync
+        if (payload.partnerGame) state.partnerGame = payload.partnerGame;
+        if (payload.game2048) { state.game2048 = payload.game2048; render2048(); }
         if (payload.roulette) {
-            const isLevelUp = isSpinning && payload.roulette.lastSpinResult && payload.roulette.lastSpinResult.levelUp;
-
-            if (isLevelUp) {
-                // Defer the board reset until the animation finishes
-                state.pendingRouletteState = payload.roulette;
-                if (state.roulette) state.roulette.tokens = payload.roulette.tokens;
-            } else {
-                state.roulette = payload.roulette; // Sync State
-            }
-
-            updateRouletteUI(); // Update Tokens/Level/Disabled items
-
-            // Check if we need to animate a spin result
-            if (payload.roulette.lastSpinResult) {
-                animateRoulette(payload.roulette.lastSpinResult);
-            }
+            state.roulette = payload.roulette;
+            updateRouletteUI();
+            if (payload.roulette.lastSpinResult) animateRoulette(payload.roulette.lastSpinResult);
         }
-
-        // [NEW] Volcano State Sync
-        if (payload.volcano) {
-            state.volcano = payload.volcano;
-            updateVolcanoUI();
-        }
+        if (payload.volcano) { state.volcano = payload.volcano; updateVolcanoUI(); }
+        if (payload.scratchCard) { state.scratchCard = payload.scratchCard; updateScratchUI(); }
 
         updateLogs(payload.logs);
 
-        if (steps > 0 && ui.diceVisual) {
-            ui.diceVisual.classList.remove('text-xl');
-            ui.diceVisual.classList.add('text-5xl');
-            ui.diceVisual.textContent = steps;
-        }
-
-        // --- VISUAL LOGIC ---
-        // 1. FAST SIM (Batch) or Special Events -> No Steps or payload indicates batch?
-        // Actually, our worker sends isAuto=true for both AutoPlay and FastSim.
-        // We need to differentiate or just infer.
-        // If the UI is in "Auto Play" mode (btnAuto hidden), we should animate.
-        // If the UI is in "Fast Sim" mode (btnFast disabled), we might want to skip animation.
-
-        // [NEW] Process Tournament Bonus from Worker (Works for BOTH Fast Sim and Auto Play)
-        if (payload.tournamentBonus && payload.tournamentBonus > 0) {
-            state.tournament.playerScore += payload.tournamentBonus;
-
-            // Integral Logic
-            if (state.tournament.integral && state.tournament.integralConfig) {
-                state.tournament.integral.score += payload.tournamentBonus;
-                let currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
-                while (currentCfg && state.tournament.integral.score >= currentCfg.required) {
-                    state.tournament.integral.score -= currentCfg.required;
-                    state.tournament.integral.level++;
-
-                    const reward = currentCfg.reward || 0;
-                    const gemReward = currentCfg.gem || 0;
-                    const diceReward = currentCfg.dice || 0;
-
-                    if (reward > 0 || gemReward > 0 || diceReward > 0) {
-                        worker.postMessage({
-                            type: 'ADD_RESOURCES',
-                            payload: {
-                                coin: reward,
-                                gem: gemReward,
-                                dice: diceReward,
-                                reason: "TOURNAMENT_INTEGRAL",
-                                desc: `錦標賽積分升級 Lv.${state.tournament.integral.level - 1} -> Lv.${state.tournament.integral.level} (${currentCfg.desc})`,
-                                gemEvent: "TOURNAMENT_GEM",
-                                gemDesc: `錦標賽積分升級寶石：${gemReward}`,
-                                diceEvent: "TOURNAMENT_DICE",
-                                diceDesc: `錦標賽積分升級骰子：${diceReward}`,
-                                eventSourceName: '錦標賽積分獎勵'
-                            }
-                        });
-                    }
-                    currentCfg = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
-                }
-            }
-            renderTournamentUI();
-
-            // Visual Feedback (Log) - Only if not Fast Sim to avoid too much DOM manipulation, or just log always?
-            // Actually worker already logs 'AIRPORT' in addMoney. So we don't need a custom UI log prepend here anymore, 
-            // but just in case, we'll let worker handle logs.
-        }
-
-        const isFastMode = ui.btnFast && ui.btnFast.disabled === true && ui.btnAuto && !ui.btnAuto.classList.contains('hidden');
+        const isFastMode = ui.btnFast && ui.btnFast.disabled === true;
 
         if (isFastMode) {
-            // Instant Update (Fast Sim)
             state.position = payload.position;
-            updateDynamicUI();
-            updateUI();
-            updateStatsUI();
+            updateDynamicUI(); updateUI(); updateStatsUI();
         } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
-            // "Watch Mode" (Auto Play) OR Manual Roll -> Animate
-            const startPos = previousPosition;
             setIsAnimating(true);
-
-            animateMove(startPos, steps, payload.position, () => {
+            animateMove(previousPosition, steps, payload.position, () => {
                 state.position = payload.position;
                 setIsAnimating(false);
-
-                updateStatsUI();
-                updateUI();
-                updateDynamicUI(); // Lightweight update instead of full renderBoard
-                updatePlayerPosition(state.position);
-
+                updateStatsUI(); updateUI(); updateDynamicUI(); updatePlayerPosition(state.position);
                 if (state.volcano && thiefVisualPos !== -1 && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
                     animateThief(thiefVisualPos, state.volcano.position);
                 }
-
                 if (isAutoRunning) {
-                    reliableSetTimeout(() => {
-                        worker.postMessage({ type: 'NEXT_TURN' });
-                    }, systemConfig.Spin_CD * 1000);
+                    reliableSetTimeout(() => { worker.postMessage({ type: 'NEXT_TURN' }); }, systemConfig.Spin_CD * 1000);
                 }
             });
         } else {
             state.position = payload.position;
-            updateDynamicUI();
-            updateUI();
-            updateStatsUI();
+            updateDynamicUI(); updateUI(); updateStatsUI();
         }
     }
 
     if (type === 'AUTO_STOPPED') {
         setIsAnimating(false);
         endAutoRoll(payload.finished);
-        // [NEW] Hide Progress
         const overlay = document.getElementById('fast-sim-overlay');
         if (overlay) overlay.classList.add('hidden');
     }
 
-    // [NEW] Progress Handler
     if (type === 'PROGRESS') {
         const overlay = document.getElementById('fast-sim-overlay');
         const percent = document.getElementById('fast-sim-percent');
-        if (overlay && percent) {
-            overlay.classList.remove('hidden');
-            percent.textContent = payload.percent;
-        }
+        if (overlay && percent) { overlay.classList.remove('hidden'); percent.textContent = payload.percent; }
     }
 
     if (type === 'EXPORT_DATA') {
         const logs = payload.logs;
-        if (!logs || logs.length === 0) {
-            alert("沒有紀錄可匯出");
-            return;
-        }
-
-        const csvContent = "data:text/csv;charset=utf-8,"
-            + "Turn,Event,Detail,Delta Gold,Balance\n"
-            + logs.map(e => `${e.turn},${e.event},"${e.detail}",${e.delta_gold},${e.current_balance}`).join("\n");
-
+        const csvContent = "data:text/csv;charset=utf-8,Turn,Event,Detail,Delta Gold,Balance\n" + logs.map(e => `${e.turn},${e.event},"${e.detail}",${e.delta_gold},${e.current_balance}`).join("\n");
         const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "monopoly_logs.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", "monopoly_logs.csv");
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
     }
 }
 
 let isAnimating = false;
-let isAutoRunning = false; // [FIX] Global state for Auto Play
+let isAutoRunning = false;
+let isFastSimulating = false;
+let isPartnerSpeedUp = false; // [NEW] Track speed up state
+let isScratchAuto = false; // [NEW] Track scratch card auto state
 function setIsAnimating(val) {
     isAnimating = val;
     ui.btnRoll.disabled = val;
@@ -814,6 +714,33 @@ async function initGame() {
             partnerGameConfig: partnerGameConfig // [NEW]
         }
     });
+
+    // 5.5 Load Scratch Card Config (New Two-Table Structure)
+    try {
+        // Load scratch_card_reward.csv (group-based rewards)
+        const resSCR = await fetch('./config/scratch_card_reward.csv');
+        if (resSCR.ok) {
+            const scrConfig = parseScratchCSV(await resSCR.text());
+            worker.postMessage({ type: 'UPDATE_SCRATCH_REWARD_CONFIG', payload: { config: scrConfig } });
+            console.log("Scratch Card Reward Config Loaded:", scrConfig.length, "entries");
+        }
+        // Load scratch_card_group.csv (level -> group mapping)
+        const resSCG = await fetch('./config/scratch_card_group.csv');
+        if (resSCG.ok) {
+            const scgConfig = parseScratchGroupCSV(await resSCG.text());
+            worker.postMessage({ type: 'UPDATE_SCRATCH_GROUP_CONFIG', payload: { config: scgConfig } });
+            console.log("Scratch Card Group Config Loaded:", scgConfig);
+        }
+        // Load scratch_card_integral.csv (level progression rewards)
+        const resSCI = await fetch('./config/scratch_card_integral.csv');
+        if (resSCI.ok) {
+            const sciConfig = parseScratchCSV(await resSCI.text());
+            worker.postMessage({ type: 'UPDATE_SCRATCH_INTEGRAL', payload: { config: sciConfig } });
+            console.log("Scratch Card Integral Config Loaded:", sciConfig);
+        }
+    } catch (e) {
+        console.warn("Scratch Card Config Load Failed", e);
+    }
 
     // 4.5 Load Volcano Config (New)
     try {
@@ -1531,9 +1458,43 @@ function parseCSV(text) {
             probability: parseFloat(obj.probability) || 1.0,
             weight: parseInt(obj.weight) || 100,
             color: obj.color_class || 'text-white',
-            level: 0,
+            level: parseInt(obj.level) || 0,
             maxLevel: 5
         };
+    }).filter(x => x);
+}
+
+function parseScratchCSV(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length === 0) return [];
+    const headers = lines[0].trim().split(',').map(h => h.trim());
+    return lines.slice(1).map(line => {
+        if (!line.trim() || line.startsWith('#')) return null;
+        const values = line.trim().split(',');
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = values[i] ? values[i].trim() : ''; });
+        return obj; // Return raw object for worker flexibility
+    }).filter(x => x);
+}
+
+// Parse scratch_card_group.csv which has array columns like "{1,2,3}"
+function parseScratchGroupCSV(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    // headers: level, group_list, weight_list
+    return lines.slice(1).map(line => {
+        if (!line.trim() || line.startsWith('#')) return null;
+        // Handle CSV with quoted array values: 1,"{1,2,3}","{100,200,300}"
+        const parts = line.trim().match(/([^,"]+|"[^"]*")/g);
+        if (!parts || parts.length < 3) return null;
+        const level = parseInt(parts[0].trim());
+        // Strip quotes and braces
+        const groupStr = parts[1].replace(/"|{|}/g, '').trim();
+        const weightStr = parts[2].replace(/"|{|}/g, '').trim();
+        const groups = groupStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+        const weights = weightStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+        if (isNaN(level) || groups.length === 0) return null;
+        return { level, groups, weights };
     }).filter(x => x);
 }
 
@@ -2243,6 +2204,7 @@ enableDraggable(document.getElementById('roulette-side-panel'), document.getElem
 enableDraggable(document.getElementById('2048-side-panel'), document.getElementById('2048-side-panel'));
 enableDraggable(document.getElementById('partner-side-panel'), document.getElementById('partner-side-panel'));
 enableDraggable(document.getElementById('volcano-side-panel'), document.getElementById('volcano-side-panel'));
+enableDraggable(document.getElementById('scratch-card-side-panel'), document.getElementById('scratch-card-side-panel'));
 // --- Export Logic ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
 if (btnResetTour) {
@@ -2372,7 +2334,7 @@ function enableDraggable(el, handle) {
 
 
 function resetDraggablePositions() {
-    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel'];
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -3212,3 +3174,241 @@ window.antigravityNotify = function (isFinal) {
         }, 100);
     }
 };
+
+// [NEW] Scratch Card Activity Logic
+function updateScratchUI() {
+    const sc = state.scratchCard;
+    if (!sc) return;
+
+    if (ui.scratchLevel) ui.scratchLevel.textContent = sc.level;
+    if (ui.scratchPoints) ui.scratchPoints.textContent = sc.points;
+
+    let currentCfg = sc.integralConfig.find(c => parseInt(c.level) === sc.level);
+    if (currentCfg) {
+        if (ui.scratchTargetPoints) ui.scratchTargetPoints.textContent = currentCfg.required_points;
+        if (ui.scratchBar) ui.scratchBar.style.width = `${(sc.points / parseInt(currentCfg.required_points)) * 100}%`;
+    }
+
+    if (ui.scratchTokens) ui.scratchTokens.textContent = sc.tokens;
+    if (ui.scratchSideTokens) ui.scratchSideTokens.textContent = sc.tokens;
+
+    if (ui.statScratchTokens) ui.statScratchTokens.textContent = sc.stats.totalTokensUsed || 0;
+    if (ui.statScratchDice) ui.statScratchDice.textContent = sc.stats.totalDice || 0;
+    if (ui.statScratchGem) ui.statScratchGem.textContent = sc.stats.totalGem || 0;
+    if (ui.statScratchGold) ui.statScratchGold.textContent = sc.stats.totalGold || 0;
+
+    if (ui.dispScratchMult) ui.dispScratchMult.textContent = scratchSpeed;
+
+    // Helper: get icon from reward record (use icon field or fall back to reward_type)
+    function getRewardIcon(t) {
+        if (t.icon && t.icon.trim()) return t.icon.trim();
+        const type = (t.reward_type || '').toUpperCase();
+        if (type === 'GOLD') return '💰';
+        if (type === 'GEM') return '💎';
+        if (type === 'DICE') return '🎲';
+        return '❓';
+    }
+
+    if (ui.scratchTargets && sc.currentCard) {
+        ui.scratchTargets.innerHTML = sc.currentCard.targets.map((t, idx) => `
+            <div class="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                <div class="text-2xl">${getRewardIcon(t)}</div>
+                <div>
+                    <div class="text-[9px] text-gray-400 uppercase tracking-widest">${t.desc || t.reward_type || '獎勵'}</div>
+                    <div class="text-[11px] font-bold text-white">${t.reward_value}</div>
+                    ${parseInt(t.integral) > 0 ? `<div class="text-[9px] text-neon-blue">+${t.integral} 積分</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    if (ui.gridScratch && sc.currentCard) {
+        ui.gridScratch.innerHTML = sc.currentCard.grid.map((iconIdx, i) => {
+            const isRevealed = sc.currentCard.revealed.includes(i);
+            const target = sc.currentCard.targets[iconIdx];
+            const isMatched = sc.currentCard.isCompleted && sc.currentCard.matchedIdx === iconIdx && isRevealed;
+            const icon = getRewardIcon(target);
+
+            return `
+                <div onclick="clickScratchCard(${i})" class="scratch-card-item aspect-square rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center relative overflow-hidden group
+                    ${isRevealed ? 'bg-white/10 border-white/20' : 'bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border-yellow-500/30 hover:border-yellow-400'}
+                    ${isMatched ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-transparent border-yellow-400 bg-yellow-400/20 animate-pulse' : ''}">
+                    ${isRevealed ? `<span class="text-2xl animate-bounce-short">${icon}</span>` : `
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <span class="text-yellow-500/40 text-[10px] font-black uppercase tracking-widest group-hover:scale-110 transition-transform">Scratch</span>
+                        </div>
+                    `}
+                </div>
+            `;
+        }).join('');
+    }
+
+    if (ui.dotScratchAuto) {
+        ui.dotScratchAuto.className = `w-2 h-2 rounded-full transition-all duration-300 ${isScratchAuto ? 'bg-neon-green shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-gray-500'}`;
+    }
+}
+
+function clickScratchCard(index) {
+    worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index } });
+}
+
+// Global exposure for onclick
+window.clickScratchCard = clickScratchCard;
+
+// Event Listeners for Scratch Card Modal
+if (ui.btnScratchOpen) {
+    ui.btnScratchOpen.addEventListener('click', () => {
+        ui.modalScratch.classList.remove('hidden');
+        setTimeout(() => {
+            ui.modalScratch.classList.remove('opacity-0');
+            const container = document.getElementById('scratch-modal-container');
+            if (container) container.classList.remove('scale-90');
+        }, 10);
+        ui.btnResetUI.classList.add('hidden');
+    });
+}
+
+if (ui.btnCloseScratch) {
+    ui.btnCloseScratch.addEventListener('click', () => {
+        ui.modalScratch.classList.add('opacity-0');
+        const container = document.getElementById('scratch-modal-container');
+        if (container) container.classList.add('scale-90');
+        setTimeout(() => ui.modalScratch.classList.add('hidden'), 300);
+        ui.btnResetUI.classList.remove('hidden');
+    });
+}
+
+if (ui.btnScratchReset) {
+    ui.btnScratchReset.addEventListener('click', () => {
+        if (confirm("確定要重置刮刮卡活動嗎？此操作將清除所有進度。")) {
+            worker.postMessage({ type: 'SCRATCH_CARD_RESET' });
+        }
+    });
+}
+
+if (ui.btnScratchMult) {
+    ui.btnScratchMult.addEventListener('click', () => {
+        const speeds = [1, 2, 3, 5, 10];
+        let nextIdx = (speeds.indexOf(scratchSpeed) + 1) % speeds.length;
+        scratchSpeed = speeds[nextIdx];
+        if (ui.dispScratchMult) ui.dispScratchMult.textContent = scratchSpeed;
+    });
+}
+
+if (ui.btnScratchAuto) {
+    ui.btnScratchAuto.addEventListener('click', () => {
+        isScratchAuto = !isScratchAuto;
+        if (isScratchAuto) runScratchAuto();
+        updateScratchUI();
+    });
+}
+
+let scratchAutoTimer = null;
+let scratchSpeed = 1; // Speed multiplier for auto scratch (1x, 2x, 3x, 5x, 10x)
+function runScratchAuto() {
+    if (!isScratchAuto) return;
+    const sc = state.scratchCard;
+    if (!sc || !sc.currentCard) {
+        scratchAutoTimer = setTimeout(runScratchAuto, 1000);
+        return;
+    }
+
+    if (sc.currentCard.isCompleted) {
+        scratchAutoTimer = setTimeout(() => {
+            worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: -1 } });
+            runScratchAuto();
+        }, Math.max(100, Math.round(1500 / scratchSpeed)));
+    } else {
+        const hidden = [];
+        for (let i = 0; i < 12; i++) {
+            if (!sc.currentCard.revealed.includes(i)) hidden.push(i);
+        }
+        if (hidden.length > 0) {
+            const rand = hidden[Math.floor(Math.random() * hidden.length)];
+            worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: rand } });
+        }
+        scratchAutoTimer = setTimeout(runScratchAuto, Math.max(50, Math.round(500 / scratchSpeed)));
+    }
+}
+
+// ==========================================
+// Scratch Card: Show Upgrade Rewards Panel
+// ==========================================
+(function () {
+    const btn = document.getElementById('btn-scratch-show-rewards');
+    if (!btn) return;
+
+    let panel = null;
+
+    function closePanel() {
+        if (panel) { panel.remove(); panel = null; }
+        document.removeEventListener('click', onOutsideClick, true);
+    }
+
+    function onOutsideClick(e) {
+        if (panel && !panel.contains(e.target) && e.target !== btn) {
+            closePanel();
+        }
+    }
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (panel) { closePanel(); return; }
+
+        const sc = state.scratchCard;
+        const cfg = sc && sc.integralConfig;
+        if (!cfg || cfg.length === 0) {
+            alert('尚未載入升級獎勵設定。');
+            return;
+        }
+
+        const currentLevel = sc.level || 1;
+
+        // Build panel HTML
+        const rows = cfg.map(c => {
+            const level = parseInt(c.level);
+            const isActive = level === currentLevel;
+            const isCompleted = level < currentLevel;
+            const gold = parseInt(c.reward_gold) || 0;
+            const gem = parseInt(c.reward_gem) || 0;
+            const dice = parseInt(c.reward_dice) || 0;
+            const pts = parseInt(c.required_points) || 0;
+
+            const rewards = [];
+            if (gold > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>💰</span><span class="font-bold">${gold.toLocaleString()}</span></span>`);
+            if (gem > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>💎</span><span class="font-bold">${gem}</span></span>`);
+            if (dice > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>🎲</span><span class="font-bold">${dice}</span></span>`);
+
+            const rowBg = isActive ? 'bg-neon-blue/20 border-neon-blue/40' : isCompleted ? 'bg-white/5 border-white/5 opacity-60' : 'bg-black/20 border-white/5';
+            const lvBadge = isActive ? 'bg-neon-blue text-black' : isCompleted ? 'bg-gray-600 text-gray-300' : 'bg-white/10 text-gray-300';
+            return `
+                <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg border ${rowBg} transition-all">
+                    <div class="text-[10px] font-bold px-1.5 py-0.5 rounded ${lvBadge} shrink-0">Lv.${level}</div>
+                    <div class="text-[9px] text-gray-400 shrink-0">${pts.toLocaleString()} pts</div>
+                    <div class="flex-1 flex flex-wrap gap-1.5 justify-end text-[10px] text-white">${rewards.join('')}</div>
+                    ${isCompleted ? '<span class="text-neon-green text-[10px]">✓</span>' : ''}
+                    ${isActive ? '<span class="text-neon-blue text-[10px] animate-pulse">▶</span>' : ''}
+                </div>
+            `;
+        }).join('');
+
+        panel = document.createElement('div');
+        panel.className = 'absolute z-50 left-0 right-0 mx-3 bg-[#0f172a] border border-neon-blue/30 rounded-xl shadow-[0_0_30px_rgba(59,130,246,0.2)] p-3 backdrop-blur-md';
+        // Position below the progress bar row (approx top: 130px within the main content area)
+        panel.style.top = '130px';
+        panel.innerHTML = `
+            <div class="text-[10px] text-neon-blue font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <span>🏆</span> 升級獎勵列表
+            </div>
+            <div class="flex flex-col gap-1">
+                ${rows}
+            </div>
+        `;
+
+        const contentArea = document.querySelector('.flex-1.flex.flex-col.p-3.overflow-hidden.relative');
+        if (contentArea) contentArea.appendChild(panel);
+
+        setTimeout(() => document.addEventListener('click', onOutsideClick, true), 0);
+    });
+})();
+

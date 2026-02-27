@@ -356,3 +356,27 @@
 .milestone-marker.reached .milestone-reward {
     transform: translateX(-50%) translateY(6px) scale(1.2);
 }
+
+@keyframes bounce-short {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+.animate-bounce-short {
+    animation: bounce-short 0.5s ease-in-out infinite;
+}
+
+.scratch-card-item {
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s;
+}
+
+.scratch-card-item:hover {
+    transform: scale(1.05);
+}

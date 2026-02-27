@@ -43,6 +43,17 @@ let state = {
         position: 10,
         config: [],
         stats: { totalHits: 0, totalKills: 0 }
+    },
+    scratchCard: {
+        level: 1,
+        points: 0,
+        tokens: 100,
+        rewardConfig: [],   // from scratch_card_reward.csv
+        groupConfig: [],    // from scratch_card_group.csv (level->groups/weights)
+        integralConfig: [], // from scratch_card_integral.csv
+        multiplier: 1,
+        currentCard: null,
+        stats: { totalTokensUsed: 0, totalGold: 0, totalGem: 0, totalDice: 0 }
     }
 };
 
@@ -143,6 +154,11 @@ self.onmessage = function (e) {
             init2048State();
             initPartnerGameState(); // [NEW]
             initVolcanoState(payload.volcanoConfig); // [NEW]
+            state.scratchCard.rewardConfig = payload.scratchCardConfig || [];
+            state.scratchCard.config = state.scratchCard.rewardConfig; // backwards compat
+            state.scratchCard.groupConfig = payload.scratchCardGroupConfig || [];
+            state.scratchCard.integralConfig = payload.scratchCardIntegralConfig || [];
+            initScratchCardState();
             // No sendUpdate here, as START_GAME will follow
             break;
 
@@ -189,6 +205,7 @@ self.onmessage = function (e) {
                 state.volcano.maxHp = state.volcano.hp;
                 state.volcano.position = 10; // Start at tile 10
             }
+            initScratchCardState();
             break;
 
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
@@ -196,6 +213,8 @@ self.onmessage = function (e) {
             if (payload.multiplier !== undefined) state.multiplier = payload.multiplier;
             if (payload.rouletteTokens !== undefined) state.roulette.tokens = payload.rouletteTokens; // [NEW] Sync Roulette Tokens
             if (payload.volcanoConfig !== undefined) state.volcano.config = payload.volcanoConfig; // [NEW]
+            if (payload.scratchTokens !== undefined) state.scratchCard.tokens = payload.scratchTokens;
+            if (payload.scratchMultiplier !== undefined) state.scratchCard.multiplier = payload.scratchMultiplier;
             sendUpdate();
             break;
 
@@ -355,6 +374,46 @@ self.onmessage = function (e) {
         case 'PARTNER_GAME_INJECT':
             if (!state.partnerGame) initPartnerGameState();
             handlePartnerInject(payload.towerId);
+            break;
+        case 'SCRATCH_CARD_PICK':
+            handleScratchPick(payload.index);
+            break;
+        case 'SCRATCH_CARD_SET_MULT':
+            if (state.scratchCard) state.scratchCard.multiplier = payload.multiplier;
+            sendUpdate();
+            break;
+        case 'UPDATE_SCRATCH_REWARD_CONFIG':
+            // New: load from scratch_card_reward.csv
+            if (state.scratchCard) {
+                state.scratchCard.rewardConfig = payload.config;
+                // Also keep .config for backwards compat if needed
+                state.scratchCard.config = payload.config;
+            }
+            generateScratchCard();
+            sendUpdate();
+            break;
+        case 'UPDATE_SCRATCH_GROUP_CONFIG':
+            // New: load from scratch_card_group.csv
+            if (state.scratchCard) state.scratchCard.groupConfig = payload.config;
+            generateScratchCard();
+            sendUpdate();
+            break;
+        case 'UPDATE_SCRATCH_CONFIG':
+            // Legacy fallback (old scratch_card.csv)
+            if (state.scratchCard) {
+                state.scratchCard.config = payload.config;
+                state.scratchCard.rewardConfig = payload.config;
+            }
+            generateScratchCard();
+            sendUpdate();
+            break;
+        case 'UPDATE_SCRATCH_INTEGRAL':
+            if (state.scratchCard) state.scratchCard.integralConfig = payload.config;
+            sendUpdate();
+            break;
+        case 'SCRATCH_CARD_RESET':
+            generateScratchCard();
+            sendUpdate();
             break;
     }
 };
@@ -1069,6 +1128,15 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             position: state.volcano.position,
             stats: state.volcano.stats,
             config: state.volcano.config // For the modal
+        },
+        scratchCard: {
+            level: state.scratchCard.level,
+            points: state.scratchCard.points,
+            tokens: state.scratchCard.tokens,
+            multiplier: state.scratchCard.multiplier,
+            currentCard: state.scratchCard.currentCard,
+            stats: state.scratchCard.stats,
+            integralConfig: state.scratchCard.integralConfig
         }
     };
 
@@ -1509,4 +1577,206 @@ function moveVolcanoEscape() {
         turn: state.turn, position: state.position, event: "VOLCANO_ESCAPE", delta_gold: 0, current_balance: state.money,
         detail: `🏃 匪徒向前逃走了 ${escapeSteps} 格！`
     });
+}
+
+// [NEW] Scratch Card Logic
+function initScratchCardState() {
+    // Maintain level/tokens/config if already exists, otherwise default
+    if (!state.scratchCard) {
+        state.scratchCard = {
+            level: 1,
+            points: 0,
+            tokens: 100,
+            rewardConfig: [],   // from scratch_card_reward.csv
+            groupConfig: [],    // from scratch_card_group.csv
+            integralConfig: [], // from scratch_card_integral.csv
+            multiplier: 1,
+            currentCard: null,
+            stats: { totalTokensUsed: 0, totalGold: 0, totalGem: 0, totalDice: 0 }
+        };
+    } else {
+        // Ensure new fields exist if upgrading from old state
+        if (!state.scratchCard.rewardConfig) state.scratchCard.rewardConfig = state.scratchCard.config || [];
+        if (!state.scratchCard.groupConfig) state.scratchCard.groupConfig = [];
+    }
+    generateScratchCard();
+}
+
+function generateScratchCard() {
+    const sc = state.scratchCard;
+
+    // --- Step 1: Determine which reward group to use for this level ---
+    // Use groupConfig (scratch_card_group.csv) for weighted group selection
+    let selectedGroupId = null;
+
+    if (sc.groupConfig && sc.groupConfig.length > 0) {
+        // Find the group config for the current level
+        const levelCfg = sc.groupConfig.find(g => g.level === sc.level);
+        if (levelCfg && levelCfg.groups.length > 0) {
+            // Weighted random selection among groups
+            const totalWeight = levelCfg.weights.reduce((sum, w) => sum + w, 0);
+            let rand = Math.random() * totalWeight;
+            for (let i = 0; i < levelCfg.groups.length; i++) {
+                rand -= (levelCfg.weights[i] || 1);
+                if (rand <= 0) {
+                    selectedGroupId = levelCfg.groups[i];
+                    break;
+                }
+            }
+            if (selectedGroupId === null) {
+                selectedGroupId = levelCfg.groups[levelCfg.groups.length - 1];
+            }
+        }
+    }
+
+    // --- Step 2: Get the 3 reward slots (sort=1,2,3) from the selected group ---
+    // rewardConfig comes from scratch_card_reward.csv
+    // columns: group, sort, reward_type, reward_spce, reward_value, weight, integral, icon, desc
+    const rewardPool = sc.rewardConfig || sc.config || [];
+    let targets = [];
+
+    if (selectedGroupId !== null) {
+        // Get rewards for this group, sorted by sort asc (1,2,3)
+        const groupRewards = rewardPool
+            .filter(r => parseInt(r.group) === selectedGroupId)
+            .sort((a, b) => parseInt(a.sort) - parseInt(b.sort));
+        targets = groupRewards.slice(0, 3);
+    }
+
+    // Fallback: use first 3 rewards from pool if no valid group
+    if (targets.length < 3) {
+        targets = rewardPool.slice(0, 3);
+    }
+    if (targets.length < 3) return; // Can't generate card
+
+    // --- Step 3: Pre-select winning reward using weight ---
+    // weight in scratch_card_reward.csv controls which of the 3 rewards wins this card
+    const totalRewardWeight = targets.reduce((sum, t) => sum + (parseInt(t.weight) || 1), 0);
+    let rw = Math.random() * totalRewardWeight;
+    let preselectedWinnerIdx = targets.length - 1; // fallback: last target
+    for (let i = 0; i < targets.length; i++) {
+        rw -= (parseInt(targets[i].weight) || 1);
+        if (rw <= 0) {
+            preselectedWinnerIdx = i;
+            break;
+        }
+    }
+
+    // --- Step 4: Build 12-slot grid ---
+    // 4 copies of each of the 3 reward types (all 3 appear equally)
+    let grid = [];
+    for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 4; j++) {
+            grid.push(i); // index into targets[]
+        }
+    }
+    // Shuffle the grid
+    grid.sort(() => 0.5 - Math.random());
+
+    sc.currentCard = {
+        groupId: selectedGroupId,
+        targets: targets,
+        grid: grid,
+        revealed: [],
+        preselectedWinnerIdx: preselectedWinnerIdx, // pre-determined winner by weight
+        matchedIdx: -1,
+        isCompleted: false
+    };
+}
+
+function handleScratchPick(index) {
+    const sc = state.scratchCard;
+    if (!sc.currentCard) return;
+
+    // If completed, any click (or index -1) resets for next card
+    if (sc.currentCard.isCompleted) {
+        generateScratchCard();
+        sendUpdate();
+        return;
+    }
+
+    if (index === -1) return; // Silent return for heartbeats
+    if (sc.currentCard.revealed.includes(index)) return;
+
+    // Cost on first pick
+    if (sc.currentCard.revealed.length === 0) {
+        const cost = sc.multiplier || 1;
+        if (sc.tokens < cost) return;
+        sc.tokens -= cost;
+        sc.stats.totalTokensUsed += cost;
+    }
+
+    sc.currentCard.revealed.push(index);
+
+    // Check results: only the pre-selected winner can win
+    const counts = [0, 0, 0];
+    sc.currentCard.revealed.forEach(idx => {
+        counts[sc.currentCard.grid[idx]]++;
+    });
+
+    const winnerIdx = sc.currentCard.preselectedWinnerIdx;
+    if (counts[winnerIdx] >= 3) {
+        // WIN! Award the pre-selected reward
+        awardScratchReward(sc.currentCard.targets[winnerIdx]);
+        sc.currentCard.matchedIdx = winnerIdx;
+        sc.currentCard.isCompleted = true;
+    }
+
+    sendUpdate();
+}
+
+function awardScratchReward(target) {
+    const sc = state.scratchCard;
+    const mult = sc.multiplier || 1;
+    const val = parseInt(target.reward_value) * mult;
+    const type = (target.reward_type || '').toUpperCase();
+    const integralGain = parseInt(target.integral) || 0;
+
+    // Grant item reward based on reward_type
+    if (type === 'GOLD') {
+        addMoney(val, 'SCRATCH_REWARD', `刮刮卡獎勵：金幣 ${val} (x${mult})`);
+        sc.stats.totalGold += val;
+    } else if (type === 'GEM') {
+        state.gems += val;
+        sc.stats.totalGem += val;
+        recordLog({ turn: state.turn, position: state.position, event: "GEM", delta_gold: 0, current_balance: state.money, detail: `刮刮卡獎勵：寶石 ${val} (x${mult})` });
+    } else if (type === 'DICE') {
+        state.dice += val;
+        state.totalEarnedDice += val;
+        sc.stats.totalDice += val;
+        state.earnedDiceBreakdown['刮刮卡'] = (state.earnedDiceBreakdown['刮刮卡'] || 0) + val;
+        recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `刮刮卡獎勵：骰子 ${val} (x${mult})` });
+    }
+
+    // Award integral points (from scratch_card_reward.integral column)
+    if (integralGain > 0) {
+        sc.points += integralGain;
+        recordLog({ turn: state.turn, position: state.position, event: "SCRATCH_INTEGRAL", delta_gold: 0, current_balance: state.money, detail: `刮刮卡積分 +${integralGain}（共 ${sc.points}）` });
+        checkScratchIntegral();
+    }
+}
+
+function checkScratchIntegral() {
+    const sc = state.scratchCard;
+    let cfg = sc.integralConfig.find(c => parseInt(c.level) === sc.level);
+    while (cfg && sc.points >= parseInt(cfg.required_points)) {
+        sc.points -= parseInt(cfg.required_points);
+        sc.level++;
+
+        // Milestone reward
+        if (parseInt(cfg.reward_gold) > 0) addMoney(parseInt(cfg.reward_gold), 'SCRATCH_MILESTONE', `刮刮卡升級 Lv.${sc.level - 1} 獎勵：金幣 ${cfg.reward_gold}`);
+        if (parseInt(cfg.reward_gem) > 0) {
+            const gReward = parseInt(cfg.reward_gem);
+            state.gems += gReward;
+            recordLog({ turn: state.turn, position: state.position, event: "GEM", delta_gold: 0, current_balance: state.money, detail: `刮刮卡升級獎勵：寶石 ${gReward}` });
+        }
+        if (parseInt(cfg.reward_dice) > 0) {
+            const dReward = parseInt(cfg.reward_dice);
+            state.dice += dReward;
+            state.totalEarnedDice += dReward;
+            recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `刮刮卡升級獎勵：骰子 ${dReward}` });
+        }
+
+        cfg = sc.integralConfig.find(c => parseInt(c.level) === sc.level);
+    }
 }
