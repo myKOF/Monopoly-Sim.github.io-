@@ -343,6 +343,13 @@ const ui = {
     // [NEW] Partner Game DOM Elements
     btnPartnerOpen: document.getElementById('btn-partner-open'),
     modalPartner: document.getElementById('partner-modal'),
+    btnClosePartner: document.getElementById('btn-close-partner'),
+    btnPartnerMultToggle: document.getElementById('btn-partner-multiplier-toggle'),
+    partnerMultDropdown: document.getElementById('partner-multiplier-dropdown'),
+    dispPartnerMult: document.getElementById('current-partner-multiplier'),
+    inputPartnerTokens: document.getElementById('partner-tokens'),
+    statPartnerTotalTokens: document.getElementById('stat-partner-total-tokens'),
+    statPartnerSpentTokens: document.getElementById('stat-partner-spent-tokens'),
     statPartnerTotalScore: document.getElementById('stat-partner-total-score'),
 
     // [NEW] Scratch Card DOM Elements
@@ -366,6 +373,7 @@ const ui = {
     statScratchGem: document.getElementById('scratch-stat-gem'),
     statScratchGold: document.getElementById('scratch-stat-gold'),
     btnScratchReset: document.getElementById('btn-scratch-reset-activity'),
+    scratchPermanentRewards: document.getElementById('scratch-permanent-rewards'),
 };
 
 const FALLBACK_DATA = [
@@ -1751,6 +1759,7 @@ function renderPartnerGame() {
     }
     if (ui.statPartnerTotalTokens) ui.statPartnerTotalTokens.textContent = (pg.tokens + (pg.stats ? pg.stats.totalSpent : 0)).toLocaleString();
     if (ui.statPartnerSpentTokens) ui.statPartnerSpentTokens.textContent = (pg.stats ? pg.stats.totalSpent : 0).toLocaleString();
+    if (ui.dispPartnerMult) ui.dispPartnerMult.textContent = `x${pg.multiplier || 1}`;
 
     let totalScore = 0;
     pg.towers.forEach((tower, idx) => {
@@ -2871,6 +2880,13 @@ if (ui.partnerMultDropdown) {
     });
 }
 
+if (ui.inputPartnerTokens) {
+    ui.inputPartnerTokens.addEventListener('input', () => {
+        const val = parseInt(ui.inputPartnerTokens.value) || 0;
+        worker.postMessage({ type: 'UPDATE_PARTNER_DATA', payload: { tokens: val } });
+    });
+}
+
 // Icon Collection Rewards Toggle (Centered Modal)
 if (ui.colRewardsToggle && ui.colRewardsModal) {
     const showModal = () => {
@@ -3189,7 +3205,7 @@ function updateScratchUI() {
         if (ui.scratchBar) ui.scratchBar.style.width = `${(sc.points / parseInt(currentCfg.required_points)) * 100}%`;
     }
 
-    if (ui.scratchTokens) ui.scratchTokens.textContent = sc.tokens;
+    if (ui.scratchTokens && document.activeElement !== ui.scratchTokens) ui.scratchTokens.value = sc.tokens;
     if (ui.scratchSideTokens) ui.scratchSideTokens.textContent = sc.tokens;
 
     if (ui.statScratchTokens) ui.statScratchTokens.textContent = sc.stats.totalTokensUsed || 0;
@@ -3210,7 +3226,7 @@ function updateScratchUI() {
     }
 
     if (ui.scratchTargets && sc.currentCard) {
-        ui.scratchTargets.innerHTML = sc.currentCard.targets.map((t, idx) => `
+        ui.scratchTargets.innerHTML = sc.currentCard.targets.slice(0, 3).map((t, idx) => `
             <div class="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
                 <div class="text-2xl">${getRewardIcon(t)}</div>
                 <div>
@@ -3245,6 +3261,77 @@ function updateScratchUI() {
 
     if (ui.dotScratchAuto) {
         ui.dotScratchAuto.className = `w-2 h-2 rounded-full transition-all duration-300 ${isScratchAuto ? 'bg-neon-green shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-gray-500'}`;
+    }
+
+    // --- Update Permanent Reward List (2048 Style) ---
+    if (ui.scratchPermanentRewards && sc.integralConfig) {
+        const currentLevel = sc.level || 1;
+        const currentPoints = sc.points || 0;
+
+        ui.scratchPermanentRewards.innerHTML = sc.integralConfig.map(c => {
+            const level = parseInt(c.level);
+            const isActive = level === currentLevel;
+            const isCompleted = level < currentLevel;
+            const targetPts = parseInt(c.required_points) || 0;
+
+            const gold = parseInt(c.reward_gold) || 0;
+            const gem = parseInt(c.reward_gem) || 0;
+            const dice = parseInt(c.reward_dice) || 0;
+
+            const rewards = [];
+            if (gold > 0) rewards.push(`
+                <div class="flex items-center gap-1">
+                    <span class="text-[10px]">💰</span>
+                    <span class="font-bold text-yellow-500/90 text-[10px]">${gold.toLocaleString()}</span>
+                </div>
+            `);
+            if (gem > 0) rewards.push(`
+                <div class="flex items-center gap-1">
+                    <span class="text-[10px]">💎</span>
+                    <span class="font-bold text-emerald-400/90 text-[10px]">${gem}</span>
+                </div>
+            `);
+            if (dice > 0) rewards.push(`
+                <div class="flex items-center gap-1">
+                    <span class="text-[10px]">🎲</span>
+                    <span class="font-bold text-blue-400/90 text-[10px]">${dice}</span>
+                </div>
+            `);
+
+            // Styling based on status
+            let rowClass = "p-2.5 rounded-xl border transition-all mb-1.5 flex flex-col gap-2 ";
+            let statusText = "";
+            let statusClass = "text-[10px] font-bold ";
+
+            if (isCompleted) {
+                rowClass += "bg-white/[0.02] border-white/5 opacity-40";
+                statusText = "已領取";
+                statusClass += "text-neon-green";
+            } else if (isActive) {
+                rowClass += "bg-vibe-primary/10 border-vibe-primary/30 ring-1 ring-vibe-primary/20 shadow-[0_0_15px_rgba(var(--vibe-primary-rgb),0.1)]";
+                statusText = `${currentPoints} / ${targetPts}`;
+                statusClass += "text-vibe-primary";
+            } else {
+                rowClass += "bg-black/20 border-white/5";
+                statusText = `0 / ${targetPts}`;
+                statusClass += "text-gray-500";
+            }
+
+            return `
+                <div class="${rowClass}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] font-black text-white px-1.5 py-0.5 rounded bg-white/5 border border-white/10 italic">LV.${level}</span>
+                            <span class="text-[10px] text-gray-400 font-medium">升級獎勵</span>
+                        </div>
+                        <div class="${statusClass}">${statusText}</div>
+                    </div>
+                    <div class="flex flex-wrap gap-3 mt-0.5">
+                        ${rewards.join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 }
 
@@ -3286,15 +3373,22 @@ if (ui.btnScratchReset) {
     });
 }
 
+if (ui.scratchTokens) {
+    ui.scratchTokens.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 0) val = 0;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { scratchTokens: val } });
+    });
+}
+
 if (ui.btnScratchMult) {
     ui.btnScratchMult.addEventListener('click', () => {
-        const speeds = [1, 2, 3, 5, 10];
+        const speeds = [1, 2, 3, 5, 10, 50, 100];
         let nextIdx = (speeds.indexOf(scratchSpeed) + 1) % speeds.length;
         scratchSpeed = speeds[nextIdx];
         if (ui.dispScratchMult) ui.dispScratchMult.textContent = scratchSpeed;
     });
 }
-
 if (ui.btnScratchAuto) {
     ui.btnScratchAuto.addEventListener('click', () => {
         isScratchAuto = !isScratchAuto;
@@ -3304,7 +3398,7 @@ if (ui.btnScratchAuto) {
 }
 
 let scratchAutoTimer = null;
-let scratchSpeed = 1; // Speed multiplier for auto scratch (1x, 2x, 3x, 5x, 10x)
+let scratchSpeed = 1;
 function runScratchAuto() {
     if (!isScratchAuto) return;
     const sc = state.scratchCard;
@@ -3317,7 +3411,7 @@ function runScratchAuto() {
         scratchAutoTimer = setTimeout(() => {
             worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: -1 } });
             runScratchAuto();
-        }, Math.max(100, Math.round(1500 / scratchSpeed)));
+        }, Math.max(10, Math.round(1500 / scratchSpeed)));
     } else {
         const hidden = [];
         for (let i = 0; i < 12; i++) {
@@ -3327,88 +3421,7 @@ function runScratchAuto() {
             const rand = hidden[Math.floor(Math.random() * hidden.length)];
             worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: rand } });
         }
-        scratchAutoTimer = setTimeout(runScratchAuto, Math.max(50, Math.round(500 / scratchSpeed)));
+        scratchAutoTimer = setTimeout(runScratchAuto, Math.max(5, Math.round(500 / scratchSpeed)));
     }
 }
-
-// ==========================================
-// Scratch Card: Show Upgrade Rewards Panel
-// ==========================================
-(function () {
-    const btn = document.getElementById('btn-scratch-show-rewards');
-    if (!btn) return;
-
-    let panel = null;
-
-    function closePanel() {
-        if (panel) { panel.remove(); panel = null; }
-        document.removeEventListener('click', onOutsideClick, true);
-    }
-
-    function onOutsideClick(e) {
-        if (panel && !panel.contains(e.target) && e.target !== btn) {
-            closePanel();
-        }
-    }
-
-    btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (panel) { closePanel(); return; }
-
-        const sc = state.scratchCard;
-        const cfg = sc && sc.integralConfig;
-        if (!cfg || cfg.length === 0) {
-            alert('尚未載入升級獎勵設定。');
-            return;
-        }
-
-        const currentLevel = sc.level || 1;
-
-        // Build panel HTML
-        const rows = cfg.map(c => {
-            const level = parseInt(c.level);
-            const isActive = level === currentLevel;
-            const isCompleted = level < currentLevel;
-            const gold = parseInt(c.reward_gold) || 0;
-            const gem = parseInt(c.reward_gem) || 0;
-            const dice = parseInt(c.reward_dice) || 0;
-            const pts = parseInt(c.required_points) || 0;
-
-            const rewards = [];
-            if (gold > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>💰</span><span class="font-bold">${gold.toLocaleString()}</span></span>`);
-            if (gem > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>💎</span><span class="font-bold">${gem}</span></span>`);
-            if (dice > 0) rewards.push(`<span class="flex items-center gap-0.5"><span>🎲</span><span class="font-bold">${dice}</span></span>`);
-
-            const rowBg = isActive ? 'bg-neon-blue/20 border-neon-blue/40' : isCompleted ? 'bg-white/5 border-white/5 opacity-60' : 'bg-black/20 border-white/5';
-            const lvBadge = isActive ? 'bg-neon-blue text-black' : isCompleted ? 'bg-gray-600 text-gray-300' : 'bg-white/10 text-gray-300';
-            return `
-                <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg border ${rowBg} transition-all">
-                    <div class="text-[10px] font-bold px-1.5 py-0.5 rounded ${lvBadge} shrink-0">Lv.${level}</div>
-                    <div class="text-[9px] text-gray-400 shrink-0">${pts.toLocaleString()} pts</div>
-                    <div class="flex-1 flex flex-wrap gap-1.5 justify-end text-[10px] text-white">${rewards.join('')}</div>
-                    ${isCompleted ? '<span class="text-neon-green text-[10px]">✓</span>' : ''}
-                    ${isActive ? '<span class="text-neon-blue text-[10px] animate-pulse">▶</span>' : ''}
-                </div>
-            `;
-        }).join('');
-
-        panel = document.createElement('div');
-        panel.className = 'absolute z-50 left-0 right-0 mx-3 bg-[#0f172a] border border-neon-blue/30 rounded-xl shadow-[0_0_30px_rgba(59,130,246,0.2)] p-3 backdrop-blur-md';
-        // Position below the progress bar row (approx top: 130px within the main content area)
-        panel.style.top = '130px';
-        panel.innerHTML = `
-            <div class="text-[10px] text-neon-blue font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                <span>🏆</span> 升級獎勵列表
-            </div>
-            <div class="flex flex-col gap-1">
-                ${rows}
-            </div>
-        `;
-
-        const contentArea = document.querySelector('.flex-1.flex.flex-col.p-3.overflow-hidden.relative');
-        if (contentArea) contentArea.appendChild(panel);
-
-        setTimeout(() => document.addEventListener('click', onOutsideClick, true), 0);
-    });
-})();
 

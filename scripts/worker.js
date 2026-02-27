@@ -1663,22 +1663,42 @@ function generateScratchCard() {
     }
 
     // --- Step 4: Build 12-slot grid ---
-    // 4 copies of each of the 3 reward types (all 3 appear equally)
+    // Fixed: Only the pre-selected winner index can have 3+ matches.
+    // Losers will have at most 2 copies on the card to prevent visual bugs.
     let grid = [];
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 4; j++) {
-            grid.push(i); // index into targets[]
+    let allCardTargets = [...targets];
+
+    // Winner gets 4 copies
+    for (let j = 0; j < 4; j++) grid.push(preselectedWinnerIdx);
+
+    // Other 2 main targets get 2 copies each (Total 4)
+    targets.forEach((t, i) => {
+        if (i === preselectedWinnerIdx) return;
+        for (let j = 0; j < 2; j++) grid.push(i);
+    });
+
+    // We have 4 + 4 = 8 slots filled. Need 4 more decoys.
+    let decoys = (sc.rewardConfig || []).filter(r => !targets.some(t => t.reward_type === r.reward_type && t.reward_value === r.reward_value));
+    decoys.sort(() => Math.random() - 0.5);
+
+    for (let j = 0; j < 4; j++) {
+        const decoy = decoys[j] || targets[preselectedWinnerIdx];
+        let idx = allCardTargets.indexOf(decoy);
+        if (idx === -1) {
+            idx = allCardTargets.length;
+            allCardTargets.push(decoy);
         }
+        grid.push(idx);
     }
-    // Shuffle the grid
-    grid.sort(() => 0.5 - Math.random());
+    // Shuffle
+    grid.sort(() => Math.random() - 0.5);
 
     sc.currentCard = {
         groupId: selectedGroupId,
-        targets: targets,
+        targets: allCardTargets,
         grid: grid,
         revealed: [],
-        preselectedWinnerIdx: preselectedWinnerIdx, // pre-determined winner by weight
+        preselectedWinnerIdx: preselectedWinnerIdx,
         matchedIdx: -1,
         isCompleted: false
     };
@@ -1708,18 +1728,24 @@ function handleScratchPick(index) {
 
     sc.currentCard.revealed.push(index);
 
-    // Check results: only the pre-selected winner can win
-    const counts = [0, 0, 0];
-    sc.currentCard.revealed.forEach(idx => {
-        counts[sc.currentCard.grid[idx]]++;
+    // Check results: The first symbol to reach 3 matches wins!
+    // This fixed the bug where matching non-intended symbols did nothing.
+    const allTargets = sc.currentCard.targets;
+    const counts = new Array(allTargets.length).fill(0);
+
+    sc.currentCard.revealed.forEach(cardSlotIdx => {
+        const symbolIdx = sc.currentCard.grid[cardSlotIdx];
+        counts[symbolIdx]++;
     });
 
-    const winnerIdx = sc.currentCard.preselectedWinnerIdx;
-    if (counts[winnerIdx] >= 3) {
-        // WIN! Award the pre-selected reward
-        awardScratchReward(sc.currentCard.targets[winnerIdx]);
-        sc.currentCard.matchedIdx = winnerIdx;
-        sc.currentCard.isCompleted = true;
+    for (let i = 0; i < allTargets.length; i++) {
+        if (counts[i] >= 3) {
+            // WIN! Award the reward that matched
+            awardScratchReward(allTargets[i]);
+            sc.currentCard.matchedIdx = i;
+            sc.currentCard.isCompleted = true;
+            break;
+        }
     }
 
     sendUpdate();
