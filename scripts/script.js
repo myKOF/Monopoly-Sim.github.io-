@@ -62,7 +62,7 @@ function parseRouletteIntegralCSV(csvText) {
 }
 
 function parseVolcanoCSV(text) {
-    const lines = text.trim().split('\n');
+    const lines = text.replace(/^\uFEFF/, '').trim().split('\n');
     return lines.slice(1).map(line => {
         const cols = line.trim().split(',');
         if (cols.length < 7) return null;
@@ -1009,9 +1009,9 @@ async function initGame() {
         console.warn("Scratch Card Config Load Failed", e);
     }
 
-    // 4.5 Load Volcano Config (New)
+    // 4.5 Load Police Pursuit Config (New)
     try {
-        const resVolcano = await fetch('./config/volcano.csv');
+        const resVolcano = await fetch('./config/police_pursuit.csv');
         if (resVolcano.ok) {
             const text = await resVolcano.text();
             const volcanoConfig = parseVolcanoCSV(text);
