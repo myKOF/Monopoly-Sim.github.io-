@@ -62,9 +62,10 @@ let state = {
         isFailed: false,
         isTransitioning: false,
         isFinished: false,
+        speed: 1, // [NEW] Speed Multiplier
         stageConfig: [],
         rewardConfig: [],
-        stats: { totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
+        stats: { totalGames: 1, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
     }
 };
 
@@ -448,7 +449,12 @@ self.onmessage = function (e) {
             break;
         case 'TRAVEL_RESET':
             handleTravelReset();
-            sendUpdate();
+            break;
+        case 'TRAVEL_FULL_RESET':
+            handleTravelFullReset();
+            break;
+        case 'TRAVEL_SET_SPEED':
+            state.travelEvent.speed = payload.speed || 1;
             break;
         case 'TRAVEL_SWITCH_CURRENCY':
             state.travelEvent.currencyType = state.travelEvent.currencyType === 'GOLD' ? 'GEM' : 'GOLD';
@@ -1949,7 +1955,9 @@ function handleTravelPick(index) {
         te.isTransitioning = true;
         sendUpdate();
 
-        const delayMs = (parseFloat(state.systemConfig.Travel_Stage_Time) || 1) * 1000;
+        const speed = te.speed || 1;
+        const baseDelay = parseFloat(state.systemConfig.Travel_Stage_Time) || 1;
+        const delayMs = (baseDelay * 1000) / speed;
         setTimeout(() => {
             if (te.level < 20) {
                 te.level++;
@@ -1959,6 +1967,7 @@ function handleTravelPick(index) {
                 te.isFinished = true;
                 te.isFailed = false;
                 te.boxes = []; // Clear boxes so they disappear from UI loop
+                self.postMessage({ type: 'TRAVEL_COMPLETE' });
             }
             te.isTransitioning = false;
             sendUpdate();
@@ -2011,6 +2020,26 @@ function handleTravelReset() {
     te.isFailed = false;
     te.isTransitioning = false;
     te.isFinished = false;
+    te.stats.totalGames++;
+    generateTravelBoxes();
+    sendUpdate();
+}
+
+function handleTravelFullReset() {
+    const te = state.travelEvent;
+    te.level = 1;
+    te.isFailed = false;
+    te.isTransitioning = false;
+    te.isFinished = false;
+    // Clear all statistics to initial state
+    te.stats = {
+        totalGames: 1,
+        totalSpentGold: 0,
+        totalSpentGem: 0,
+        totalEarnedDice: 0,
+        totalEarnedGem: 0,
+        totalEarnedGold: 0
+    };
     generateTravelBoxes();
     sendUpdate();
 }

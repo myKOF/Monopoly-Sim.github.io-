@@ -1707,7 +1707,7 @@
 
                         <!-- All Clear Message (Central) -->
                         <div id="traveler-finished-msg"
-                            class="absolute inset-0 flex flex-col items-center justify-center gap-4 hidden animate-in fade-in zoom-in duration-700">
+                            class="absolute inset-0 flex flex-col items-center justify-center gap-4 hidden animate-in fade-in zoom-in duration-700 z-50">
                             <div class="text-9xl animate-bounce drop-shadow-[0_0_30px_rgba(255,215,0,0.4)]">🏆</div>
                             <h2
                                 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-yellow-400 to-yellow-600 italic tracking-wider drop-shadow-lg">
@@ -1759,6 +1759,13 @@
                                     <option value="100">100x</option>
                                 </select>
                             </div>
+                            <div class="flex items-center gap-2 bg-black/40 px-3 rounded-xl border border-white/10">
+                                <span
+                                    class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Repeat</span>
+                                <input type="number" id="traveler-repeat-count"
+                                    class="w-10 bg-transparent text-emerald-400 font-black text-xs outline-none border-none text-center"
+                                    value="1" min="1" step="1" title="自動重玩局數 (1 = 不重玩)">
+                            </div>
                         </div>
 
                         <div class="flex gap-3">
@@ -1782,6 +1789,15 @@
                         <span class="text-base">📊</span> 冒險統計面版
                     </h3>
                     <div class="flex flex-col gap-2.5">
+                        <div class="bg-[#141b2d] p-2.5 rounded-xl border border-white/5 shadow-inner">
+                            <div
+                                class="text-[8px] text-gray-500 uppercase tracking-widest font-black mb-1 flex justify-between">
+                                <span>累計局數</span>
+                                <span class="text-purple-500/50">Games</span>
+                            </div>
+                            <div id="traveler-stat-games"
+                                class="text-base font-mono text-white font-black leading-none italic">-</div>
+                        </div>
                         <div class="bg-[#141b2d] p-2.5 rounded-xl border border-white/5 shadow-inner">
                             <div
                                 class="text-[8px] text-gray-500 uppercase tracking-widest font-black mb-1 flex justify-between">
@@ -1869,8 +1885,31 @@
         </div>
     </div>
 
+    <!-- Traveler Completion Confirm Dialog [NEW] -->
+    <div id="traveler-complete-dialog"
+        class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md hidden opacity-0 transition-opacity duration-500">
+        <div
+            class="bg-slate-900 border-2 border-emerald-500/30 p-10 rounded-[2.5rem] shadow-[0_0_50px_rgba(16,185,129,0.2)] max-w-md w-full text-center scale-90 transition-transform duration-500 traveler-complete-content relative overflow-hidden">
+            <!-- Decorative Background Element -->
+            <div class="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl"></div>
+            <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl"></div>
+
+            <div class="relative z-10">
+                <div class="text-7xl mb-6">👑</div>
+                <h3 class="text-3xl font-black text-white italic mb-3 tracking-tight">恭喜！全部通關</h3>
+                <p class="text-gray-400 mb-10 leading-relaxed">您已成功完成了旅行家活動的所有挑战！<br>準備好再次出發了嗎？</p>
+                <div class="flex justify-center">
+                    <button id="btn-traveler-replay"
+                        class="w-full py-5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-3 group">
+                        <span class="text-xl group-hover:rotate-12 transition-transform">🧭</span>
+                        <span class="text-lg uppercase tracking-widest">點擊重新遊戲</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="scripts/script.js"></script>
 </body>
-
 
 </html>

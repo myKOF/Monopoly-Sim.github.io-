@@ -445,6 +445,10 @@ const ui = {
     travelerInsufficientMsg: document.getElementById('traveler-insufficient-msg'),
     travelerInsufficientIcon: document.getElementById('traveler-insufficient-icon'),
     travelerFinishedMsg: document.getElementById('traveler-finished-msg'),
+    travelerStatGames: document.getElementById('traveler-stat-games'),
+    dialogTravelerComplete: document.getElementById('traveler-complete-dialog'),
+    btnTravelerReplay: document.getElementById('btn-traveler-replay'),
+    travelerRepeatInput: document.getElementById('traveler-repeat-count'),
 };
 
 const FALLBACK_DATA = [
@@ -537,6 +541,21 @@ function workerMessageHandler(e) {
 
     if (type === 'TRAVEL_INSUFFICIENT_FUNDS') {
         showTravelerInsufficientFundsDialog(payload.currency);
+    }
+
+    if (type === 'TRAVEL_COMPLETE') {
+        const repeatInput = ui.travelerRepeatInput;
+        const repeatCount = repeatInput ? parseInt(repeatInput.value) : 1;
+
+        if (repeatCount > 1) {
+            // Auto Replay
+            if (repeatInput) repeatInput.value = repeatCount - 1;
+            worker.postMessage({ type: 'TRAVEL_RESET' });
+            // Optionally log or notify
+            console.log(`[Traveler] Auto Replaying. Remaining: ${repeatCount - 1}`);
+        } else {
+            showTravelerCompleteDialog();
+        }
     }
 
     if (type === 'AUTO_STOPPED') {
@@ -2033,7 +2052,8 @@ function runTravelerAutoLoop() {
     if (currentTe) {
         if (currentTe.isFailed) {
             // Check for dialogs and failure overlay
-            delay = 1000; // 1 second interval for auto actions as requested
+            // [FIX] Accelerate dialog handling based on speed
+            delay = Math.max(50, 1000 / speed);
             if (ui.dialogTravelerInsufficient && !ui.dialogTravelerInsufficient.classList.contains('hidden')) {
                 ui.btnTravelerBuyYes.click();
             } else if (ui.dialogTravelerConfirm && !ui.dialogTravelerConfirm.classList.contains('hidden')) {
@@ -2155,9 +2175,11 @@ function renderTravelerEvent() {
         if (te.isFinished) {
             ui.travelerFinishedMsg.style.display = 'flex'; // Show as flex
             ui.travelerFinishedMsg.classList.remove('hidden');
+            setTimeout(() => ui.travelerFinishedMsg.classList.add('opacity-100'), 10);
         } else {
             ui.travelerFinishedMsg.style.display = 'none';
             ui.travelerFinishedMsg.classList.add('hidden');
+            ui.travelerFinishedMsg.classList.remove('opacity-100');
         }
     }
 
@@ -2181,6 +2203,7 @@ function renderTravelerEvent() {
     if (ui.travelerStatEarnedDice) ui.travelerStatEarnedDice.textContent = te.stats.totalEarnedDice.toLocaleString();
     if (ui.travelerStatEarnedGem) ui.travelerStatEarnedGem.textContent = te.stats.totalEarnedGem.toLocaleString();
     if (ui.travelerStatEarnedGold) ui.travelerStatEarnedGold.textContent = te.stats.totalEarnedGold.toLocaleString();
+    if (ui.travelerStatGames) ui.travelerStatGames.textContent = te.stats.totalGames.toLocaleString();
 
     handleTravelerAuto();
 }
@@ -3755,6 +3778,10 @@ if (ui.btnTravelerOpen) {
             }
         }, 10);
         renderTravelerEvent();
+        // Sync speed
+        if (ui.travelerSpeed) {
+            worker.postMessage({ type: 'TRAVEL_SET_SPEED', payload: { speed: parseInt(ui.travelerSpeed.value) } });
+        }
     });
 }
 
@@ -3812,8 +3839,8 @@ if (ui.btnTravelerGiveup) {
 
 if (ui.btnTravelerReset) {
     ui.btnTravelerReset.addEventListener('click', () => {
-        if (confirm("確定要重置旅行家活動嗎？\n這將會清除當前進度並回到第 1 關。")) {
-            worker.postMessage({ type: 'TRAVEL_RESET' });
+        if (confirm("確定要重置旅行家活動嗎？\n這將會清除當前進度並回到第 1 關且歸零統計數據。")) {
+            worker.postMessage({ type: 'TRAVEL_FULL_RESET' });
         }
     });
 }
@@ -3896,10 +3923,46 @@ if (ui.btnTravelerBuyNo) {
 
 if (ui.travelerSpeed) {
     ui.travelerSpeed.addEventListener('change', () => {
+        const speed = parseInt(ui.travelerSpeed.value);
+        worker.postMessage({ type: 'TRAVEL_SET_SPEED', payload: { speed } });
         if (travelerAutoActive) {
             handleTravelerAuto(); // Restart with new delay
         }
     });
+}
+
+if (ui.btnTravelerReplay) {
+    ui.btnTravelerReplay.addEventListener('click', () => {
+        worker.postMessage({ type: 'TRAVEL_RESET' });
+        closeTravelerCompleteDialog();
+    });
+}
+
+function showTravelerCompleteDialog() {
+    if (!ui.dialogTravelerComplete) return;
+
+    ui.dialogTravelerComplete.classList.remove('hidden');
+    setTimeout(() => {
+        ui.dialogTravelerComplete.classList.add('opacity-100');
+        ui.dialogTravelerComplete.classList.remove('opacity-0');
+        const content = ui.dialogTravelerComplete.querySelector('.traveler-complete-content');
+        if (content) {
+            content.style.transform = 'scale(1)';
+            content.style.opacity = '1';
+        }
+    }, 10);
+}
+
+function closeTravelerCompleteDialog() {
+    if (!ui.dialogTravelerComplete) return;
+    ui.dialogTravelerComplete.classList.remove('opacity-100');
+    ui.dialogTravelerComplete.classList.add('opacity-0');
+    const content = ui.dialogTravelerComplete.querySelector('.traveler-complete-content');
+    if (content) {
+        content.style.transform = 'scale(0.9)';
+        content.style.opacity = '0';
+    }
+    setTimeout(() => ui.dialogTravelerComplete.classList.add('hidden'), 500);
 }
 
 
