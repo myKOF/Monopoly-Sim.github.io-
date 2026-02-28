@@ -88,6 +88,21 @@ let state = {
             totalEarnedGem: 0,
             totalEmptyDigs: 0
         }
+    },
+    magicPlant: {
+        level: 1,
+        points: 0,
+        tokens: 100,
+        rewardConfig: [],
+        stats: {
+            totalWatered: 0,
+            totalSpentGold: 0,
+            totalSpentGem: 0,
+            totalEarnedDice: 0,
+            totalEarnedGold: 0,
+            totalEarnedGem: 0
+        },
+        availableFruits: []
     }
 };
 
@@ -193,6 +208,7 @@ self.onmessage = function (e) {
             state.scratchCard.groupConfig = payload.scratchCardGroupConfig || [];
             state.scratchCard.integralConfig = payload.scratchCardIntegralConfig || [];
             initScratchCardState();
+            initMagicPlantState(payload.magicPlantConfig);
             // No sendUpdate here, as START_GAME will follow
             break;
 
@@ -240,6 +256,13 @@ self.onmessage = function (e) {
                 state.volcano.position = 10; // Start at tile 10
             }
             initScratchCardState();
+            initMagicPlantState(state.magicPlant.rewardConfig); // Keep existing config if resetting game
+            state.magicPlant.level = 1;
+            state.magicPlant.points = 0;
+            state.magicPlant.tokens = 100;
+            state.magicPlant.stats = { totalWatered: 0, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGold: 0, totalEarnedGem: 0 };
+            state.magicPlant.hasFruit = false;
+            state.magicPlant.fruitClaimed = false;
             break;
 
         case 'UPDATE_CONFIG': // New: Handle Dice/Multiplier updates from UI
@@ -252,6 +275,7 @@ self.onmessage = function (e) {
             if (payload.scratchTokens !== undefined) state.scratchCard.tokens = payload.scratchTokens;
             if (payload.scratchMultiplier !== undefined) state.scratchCard.multiplier = payload.scratchMultiplier;
             if (payload.archaeologyTokens !== undefined) state.archaeology.tokens = payload.archaeologyTokens;
+            if (payload.magicPlantTokens !== undefined) state.magicPlant.tokens = payload.magicPlantTokens;
             sendUpdate();
             break;
 
@@ -525,6 +549,25 @@ self.onmessage = function (e) {
             state.archaeology.foundItemsCount = 0;
             state.archaeology.isFinished = false;
             initArchaeologyStage();
+            sendUpdate();
+            break;
+        case 'MAGIC_PLANT_WATER':
+            handleMagicPlantWater();
+            break;
+        case 'MAGIC_PLANT_HARVEST':
+            handleMagicPlantHarvest(payload.level);
+            break;
+        case 'MAGIC_PLANT_RESET':
+            handleMagicPlantReset();
+            break;
+        case 'MAGIC_PLANT_PURCHASE':
+            if (payload.currency === 'GOLD') {
+                state.money += 1000000;
+                recordLog({ turn: state.turn, position: state.position, event: "MAGIC_PURCHASE", delta_gold: 1000000, current_balance: state.money, detail: `魔法加值：獲得 1,000,000 金幣` });
+            } else if (payload.currency === 'GEM') {
+                state.gems += 10000;
+                recordLog({ turn: state.turn, position: state.position, event: "MAGIC_PURCHASE", delta_gold: 0, current_balance: state.money, detail: `魔法加值：獲得 10,000 寶石` });
+            }
             sendUpdate();
             break;
     }
@@ -1270,6 +1313,14 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             currentStageConfig: state.archaeology.currentStageConfig,
             stats: state.archaeology.stats,
             rewardConfigs: state.archaeology.rewardConfigs
+        },
+        magicPlant: {
+            level: state.magicPlant.level,
+            points: state.magicPlant.points,
+            tokens: state.magicPlant.tokens,
+            stats: state.magicPlant.stats,
+            rewardConfig: state.magicPlant.rewardConfig,
+            availableFruits: state.magicPlant.availableFruits
         }
     };
 
@@ -2450,6 +2501,112 @@ function grantArchaeologyReward(type, spec, value, source) {
         event: "EVENT_REWARD",
         detail: `${source}: ${type} x${value}`,
         delta_gold: type === 'COIN' ? value : 0,
+        current_balance: state.money
+    });
+}
+
+// --- Magic Plant Logic [NEW] ---
+function initMagicPlantState(config) {
+    if (config) state.magicPlant.rewardConfig = config;
+}
+
+function handleMagicPlantWater() {
+    const mp = state.magicPlant;
+    const maxLevel = mp.rewardConfig.length || 10;
+
+    // Stop if already watered for all stages or no tokens
+    if (mp.stats.totalWatered >= maxLevel || mp.tokens <= 0) return;
+
+    mp.tokens--;
+    mp.points++;
+    mp.stats.totalWatered++;
+
+    // Add fruit for the CURRENT level
+    if (!mp.availableFruits.includes(mp.level)) {
+        mp.availableFruits.push(mp.level);
+    }
+
+    // Watering Reward
+    const cfg = mp.rewardConfig.find(c => c.level === mp.level);
+    if (cfg) {
+        grantMagicReward(cfg.reward_type, cfg.reward_spec, cfg.reward_value, "澆水獎勵");
+    }
+
+    // Level up to next stage
+    if (mp.level < maxLevel) {
+        mp.level++;
+    }
+
+    sendUpdate();
+}
+
+function handleMagicPlantHarvest(level) {
+    const mp = state.magicPlant;
+    const targetLevel = level;
+    if (!targetLevel || !mp.availableFruits.includes(targetLevel)) return;
+
+    const cfg = mp.rewardConfig.find(c => c.level === targetLevel);
+    if (!cfg) return;
+
+    const costType = (cfg.bonus_type || "").toUpperCase();
+    const costValue = parseInt(cfg.bonus_value) || 0;
+
+    if (costType === 'COIN' || costType === 'GOLD') {
+        if (state.money >= costValue) {
+            state.money -= costValue;
+            mp.stats.totalSpentGold += costValue;
+        } else {
+            self.postMessage({ type: 'MAGIC_PLANT_INSUFFICIENT_FUNDS', payload: { currency: 'GOLD', amount: costValue } });
+            return;
+        }
+    } else if (costType === 'GEM') {
+        if (state.gems >= costValue) {
+            state.gems -= costValue;
+            mp.stats.totalSpentGem += costValue;
+        } else {
+            self.postMessage({ type: 'MAGIC_PLANT_INSUFFICIENT_FUNDS', payload: { currency: 'GEM', amount: costValue } });
+            return;
+        }
+    }
+
+    // Success: Remove fruit and grant reward
+    mp.availableFruits = mp.availableFruits.filter(lvl => lvl !== targetLevel);
+    grantMagicReward(cfg.fruit_reward_type, cfg.fruit_reward_spec, cfg.fruit_reward_value, `摘取第 ${targetLevel} 階果實獎勵`);
+    sendUpdate();
+}
+
+function handleMagicPlantReset() {
+    const mp = state.magicPlant;
+    mp.level = 1;
+    mp.points = 0;
+    mp.tokens = 100;
+    mp.stats = { totalWatered: 0, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGold: 0, totalEarnedGem: 0 };
+    mp.availableFruits = [];
+    sendUpdate();
+}
+
+function grantMagicReward(type, spec, value, source) {
+    const mp = state.magicPlant;
+    const utype = (type || "").toUpperCase();
+    if (utype === 'DICE') {
+        state.dice += value;
+        state.totalEarnedDice += value;
+        state.earnedDiceBreakdown['魔法植物'] = (state.earnedDiceBreakdown['魔法植物'] || 0) + value;
+        mp.stats.totalEarnedDice += value;
+    } else if (utype === 'COIN' || utype === 'GOLD') {
+        addMoney(value, 'INCOME', source);
+        mp.stats.totalEarnedGold += value;
+    } else if (utype === 'GEM') {
+        state.gems += value;
+        mp.stats.totalEarnedGem += value;
+    }
+
+    recordLog({
+        turn: state.turn,
+        position: state.position,
+        event: "EVENT_REWARD",
+        detail: `魔法植物 ${source}：${type} x${value}`,
+        delta_gold: (utype === 'COIN' || utype === 'GOLD') ? value : 0,
         current_balance: state.money
     });
 }

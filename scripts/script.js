@@ -8,6 +8,8 @@ let rouletteInterval = null;
 let partnerGameConfig = []; // [NEW]
 let partnerAutoInjectState = { 1: false, 2: false, 3: false, 4: false }; // [NEW]
 let partnerAutoInjectInterval = null; // [NEW]
+let magicPlantConfig = []; // [NEW]
+let magicPlantWateringTimer = null; // [NEW]
 
 // debug: visual error logger (Keep this)
 window.onerror = function (msg, url, line, col, error) {
@@ -202,6 +204,27 @@ function parsePartnerGameCSV(csvText) {
             gem: parseInt(p[5].trim()) || 0,
             dice: parseInt(p[6].trim()) || 0,
             desc: p[7].trim()
+        };
+    }).filter(x => x);
+}
+
+// [NEW] Parse Magic Plant CSV
+function parseMagicPlantCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 10) return null;
+        return {
+            level: parseInt(cols[0]),
+            reward_type: cols[1],
+            reward_spec: cols[2],
+            reward_value: parseInt(cols[3]),
+            bonus_type: cols[4],
+            bonus_spec: cols[5],
+            bonus_value: parseInt(cols[6]),
+            fruit_reward_type: cols[7],
+            fruit_reward_spec: cols[8],
+            fruit_reward_value: parseInt(cols[9])
         };
     }).filter(x => x);
 }
@@ -521,6 +544,37 @@ const ui = {
     statArchaeologyEmpty: document.getElementById('archaeology-stat-empty-digs'),
     statArchaeologyRate: document.getElementById('archaeology-stat-success-rate'),
     archaeologyFinishOverlay: document.getElementById('archaeology-finish-overlay'),
+
+    // [NEW] Magic Plant DOM Elements
+    btnMagicPlantOpen: document.getElementById('btn-magic-plant-open'),
+    modalMagicPlant: document.getElementById('magic-plant-modal'),
+    btnCloseMagicPlant: document.getElementById('btn-magic-plant-close'),
+    magicLevelDisp: document.getElementById('magic-plant-level-disp'),
+    magicProgressBar: document.getElementById('magic-stage-progress'),
+    magicMilestones: document.getElementById('magic-stage-milestones'),
+    magicTreeVisual: document.getElementById('magic-tree-visual'),
+    magicFruit: document.getElementById('magic-fruit'),
+    magicWaterEffect: document.getElementById('watering-effect'),
+    btnMagicWater: document.getElementById('btn-magic-plant-water'),
+    btnMagicHarvest: document.getElementById('btn-magic-plant-harvest'),
+    magicHarvestCost: document.getElementById('magic-harvest-cost'),
+    magicTokens: document.getElementById('magic-plant-tokens'),
+    magicSpeed: document.getElementById('magic-plant-speed'),
+    btnMagicReset: document.getElementById('btn-magic-plant-reset'),
+    statMagicWatered: document.getElementById('magic-stat-watered'),
+    statMagicSpentGold: document.getElementById('magic-stat-spent-gold'),
+    statMagicSpentGem: document.getElementById('magic-stat-spent-gem'),
+    statMagicEarnedDice: document.getElementById('magic-stat-earned-dice'),
+    statMagicEarnedGold: document.getElementById('magic-stat-earned-gold'),
+    statMagicEarnedGem: document.getElementById('magic-stat-earned-gem'),
+    magicHeaderGold: document.getElementById('magic-plant-header-gold'),
+    magicHeaderGem: document.getElementById('magic-plant-header-gem'),
+    magicHeaderDice: document.getElementById('magic-plant-header-dice'),
+    dialogMagicInsufficient: document.getElementById('magic-plant-insufficient-dialog'),
+    btnMagicBuyYes: document.getElementById('btn-magic-plant-buy-yes'),
+    btnMagicBuyNo: document.getElementById('btn-magic-plant-buy-no'),
+    magicInsufficientMsg: document.getElementById('magic-plant-insufficient-msg'),
+    magicInsufficientIcon: document.getElementById('magic-plant-insufficient-icon'),
 };
 
 const FALLBACK_DATA = [
@@ -585,6 +639,7 @@ function workerMessageHandler(e) {
         if (payload.scratchCard) { state.scratchCard = payload.scratchCard; updateScratchUI(); }
         if (payload.travelEvent) { state.travelEvent = payload.travelEvent; renderTravelerEvent(); }
         if (payload.archaeology) { state.archaeology = payload.archaeology; renderArchaeology(); }
+        if (payload.magicPlant) { state.magicPlant = payload.magicPlant; updateMagicPlantUI(); }
 
         updateLogs(payload.logs);
 
@@ -642,6 +697,10 @@ function workerMessageHandler(e) {
         const overlay = document.getElementById('fast-sim-overlay');
         const percent = document.getElementById('fast-sim-percent');
         if (overlay && percent) { overlay.classList.remove('hidden'); percent.textContent = payload.percent; }
+    }
+
+    if (type === 'MAGIC_PLANT_INSUFFICIENT_FUNDS') {
+        showMagicPlantInsufficientFundsDialog(payload.currency);
     }
 
     if (type === 'EXPORT_DATA') {
@@ -791,6 +850,13 @@ async function initGame() {
         }
     } catch (e) { }
 
+    try {
+        const response = await fetch('./config/magic_plant.csv');
+        if (response.ok) {
+            magicPlantConfig = parseMagicPlantCSV(await response.text());
+        }
+    } catch (e) { }
+
     // 2. Load System Config (Async)
     try {
         const response = await fetch('./config/system_config.csv?' + new Date().getTime());
@@ -911,7 +977,8 @@ async function initGame() {
             rouletteIntegralConfig: rouletteIntegralConfig, // [NEW] Pass roulette integral config
             config2048: config2048,
             config2048Integral: config2048Integral,
-            partnerGameConfig: partnerGameConfig // [NEW]
+            partnerGameConfig: partnerGameConfig, // [NEW]
+            magicPlantConfig: magicPlantConfig // [NEW]
         }
     });
 
@@ -1049,6 +1116,8 @@ async function initGame() {
             updateTournamentBots(); // Start Loop
         }
     } catch (e) { console.warn("Tournament Load Failed", e); }
+
+    setupMagicPlantListeners();
 }
 
 
@@ -2633,6 +2702,8 @@ enableDraggable(document.getElementById('scratch-card-side-panel'), document.get
 enableDraggable(document.getElementById('activity-traveler-panel'), document.getElementById('activity-traveler-panel'));
 enableDraggable(document.getElementById('activity-archaeology-panel'), document.getElementById('activity-archaeology-panel'));
 enableDraggable(document.getElementById('archaeology-modal-container'), document.getElementById('archaeology-modal-header'));
+enableDraggable(document.getElementById('activity-magic-plant-panel'), document.getElementById('activity-magic-plant-panel'));
+enableDraggable(document.getElementById('magic-plant-modal-container'), document.getElementById('magic-plant-modal-header'));
 // --- Export Logic ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
 if (btnResetTour) {
@@ -2762,7 +2833,7 @@ function enableDraggable(el, handle) {
 
 
 function resetDraggablePositions() {
-    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel', 'activity-traveler-panel', 'activity-archaeology-panel', 'archaeology-modal-container'];
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel', 'activity-traveler-panel', 'activity-archaeology-panel', 'archaeology-modal-container', 'activity-magic-plant-panel', 'magic-plant-modal-container'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -4434,5 +4505,242 @@ function closeArchaeologyModal() {
         ui.btnCloseArchaeology.click();
     }
 }
+
+
+// --- Magic Plant UI Logic [NEW] ---
+function updateMagicPlantUI() {
+    const mp = state.magicPlant;
+    if (!mp) return;
+
+    if (ui.magicLevelDisp) ui.magicLevelDisp.textContent = mp.level;
+    if (ui.magicHeaderGold) ui.magicHeaderGold.textContent = state.money.toLocaleString();
+    if (ui.magicHeaderGem) ui.magicHeaderGem.textContent = state.gems.toLocaleString();
+    if (ui.magicHeaderDice) ui.magicHeaderDice.textContent = state.dice.toLocaleString();
+    if (ui.magicTokens) ui.magicTokens.value = mp.tokens;
+
+    // Stats
+    if (ui.statMagicWatered) ui.statMagicWatered.textContent = mp.stats.totalWatered.toLocaleString();
+    if (ui.statMagicSpentGold) ui.statMagicSpentGold.textContent = mp.stats.totalSpentGold.toLocaleString();
+    if (ui.statMagicSpentGem) ui.statMagicSpentGem.textContent = mp.stats.totalSpentGem.toLocaleString();
+    if (ui.statMagicEarnedDice) ui.statMagicEarnedDice.textContent = mp.stats.totalEarnedDice.toLocaleString();
+    if (ui.statMagicEarnedGold) ui.statMagicEarnedGold.textContent = mp.stats.totalEarnedGold.toLocaleString();
+    if (ui.statMagicEarnedGem) ui.statMagicEarnedGem.textContent = mp.stats.totalEarnedGem.toLocaleString();
+
+    // Progress Bar
+    if (ui.magicProgressBar) {
+        const totalLevels = mp.rewardConfig.length || 10;
+        const percent = Math.min(100, ((mp.level - 1) / (totalLevels - 1)) * 100);
+        ui.magicProgressBar.style.width = `${percent}%`;
+
+        // Handle Max Level State
+        if (ui.btnMagicWater) {
+            if (mp.stats.totalWatered >= totalLevels) {
+                ui.btnMagicWater.disabled = true;
+                ui.btnMagicWater.classList.add('opacity-50', 'cursor-not-allowed');
+                // Target the text span (last child usually or use selector)
+                const textSpan = ui.btnMagicWater.querySelector('span:last-child');
+                if (textSpan) textSpan.textContent = '等級已達上限 (MAX)';
+            } else {
+                ui.btnMagicWater.disabled = false;
+                ui.btnMagicWater.classList.remove('opacity-50', 'cursor-not-allowed');
+                const textSpan = ui.btnMagicWater.querySelector('span:last-child');
+                if (textSpan) textSpan.textContent = '澆水 (Water)';
+            }
+        }
+    }
+
+    // Tree Growth Scaling
+    if (ui.magicTreeVisual) {
+        const scale = 1 + (mp.level * 0.05); // Grows 5% per level
+        ui.magicTreeVisual.style.transform = `scale(${scale})`;
+    }
+
+    // [IMPORTANT] Render Milestones (with Fruits)
+    renderMagicPlantMilestones();
+}
+
+// Event Listeners for Magic Plant
+function setupMagicPlantListeners() {
+    if (ui.btnMagicPlantOpen) {
+        ui.btnMagicPlantOpen.onclick = () => {
+            ui.modalMagicPlant.classList.remove('hidden');
+            setTimeout(() => ui.modalMagicPlant.classList.add('opacity-100'), 50);
+            renderMagicPlantMilestones();
+            updateMagicPlantUI();
+        };
+    }
+
+    if (ui.btnCloseMagicPlant) {
+        ui.btnCloseMagicPlant.onclick = () => {
+            ui.modalMagicPlant.classList.remove('opacity-100');
+            setTimeout(() => ui.modalMagicPlant.classList.add('hidden'), 300);
+            // Stop ongoing watering timer if modal closed?
+            if (magicPlantWateringTimer) {
+                clearTimeout(magicPlantWateringTimer);
+                magicPlantWateringTimer = null;
+            }
+        };
+    }
+
+    if (ui.btnMagicWater) {
+        ui.btnMagicWater.onclick = () => {
+            handleMagicWaterClick();
+        };
+    }
+
+    if (ui.btnMagicReset) {
+        ui.btnMagicReset.onclick = () => {
+            if (confirm("是否重置魔法植物活動的所有數據？")) {
+                worker.postMessage({ type: 'MAGIC_PLANT_RESET' });
+            }
+        };
+    }
+
+    if (ui.magicTokens) {
+        ui.magicTokens.onchange = (e) => {
+            worker.postMessage({ type: 'UPDATE_CONFIG', payload: { magicPlantTokens: parseInt(e.target.value) } });
+        };
+    }
+
+    if (ui.magicSpeed) {
+        ui.magicSpeed.onchange = (e) => {
+            state.magicPlant.speed = parseInt(e.target.value);
+        };
+    }
+
+    if (ui.btnMagicBuyYes) {
+        ui.btnMagicBuyYes.onclick = () => {
+            const currency = ui.magicInsufficientIcon.textContent === '💰' ? 'GOLD' : 'GEM';
+            worker.postMessage({ type: 'MAGIC_PLANT_PURCHASE', payload: { currency } });
+            closeMagicPlantInsufficientDialog();
+        };
+    }
+
+    if (ui.btnMagicBuyNo) {
+        ui.btnMagicBuyNo.onclick = () => {
+            closeMagicPlantInsufficientDialog();
+        };
+    }
+}
+
+function showMagicPlantInsufficientFundsDialog(currency) {
+    if (!ui.dialogMagicInsufficient) return;
+
+    if (currency === 'GOLD') {
+        ui.magicInsufficientIcon.textContent = '💰';
+        ui.magicInsufficientMsg.textContent = '您的金幣不足以摘取此果實，是否前往加值專區獲得 1,000,000 金幣？';
+        ui.btnMagicBuyYes.textContent = '確定加值 (1,000,000 GOLD)';
+    } else {
+        ui.magicInsufficientIcon.textContent = '💎';
+        ui.magicInsufficientMsg.textContent = '您的寶石不足以摘取此果實，是否前往加值專區獲得 10,000 寶石？';
+        ui.btnMagicBuyYes.textContent = '確定加值 (10,000 GEM)';
+    }
+
+    ui.dialogMagicInsufficient.classList.remove('hidden');
+    setTimeout(() => {
+        ui.dialogMagicInsufficient.classList.add('opacity-100');
+        ui.dialogMagicInsufficient.querySelector('div').classList.remove('scale-95');
+        ui.dialogMagicInsufficient.querySelector('div').classList.add('scale-100');
+    }, 10);
+}
+
+function closeMagicPlantInsufficientDialog() {
+    if (!ui.dialogMagicInsufficient) return;
+    ui.dialogMagicInsufficient.classList.remove('opacity-100');
+    ui.dialogMagicInsufficient.querySelector('div').classList.remove('scale-100');
+    ui.dialogMagicInsufficient.querySelector('div').classList.add('scale-95');
+    setTimeout(() => ui.dialogMagicInsufficient.classList.add('hidden'), 300);
+}
+
+function handleMagicWaterClick() {
+    if (state.magicPlant.tokens <= 0) return;
+
+    // Watering Animation Effect
+    if (ui.magicWaterEffect) {
+        ui.magicWaterEffect.classList.remove('opacity-0', '-translate-y-10');
+        ui.magicWaterEffect.classList.add('opacity-100', 'translate-y-10');
+        setTimeout(() => {
+            ui.magicWaterEffect.classList.add('opacity-0', '-translate-y-10');
+            ui.magicWaterEffect.classList.remove('opacity-100', 'translate-y-10');
+        }, 500);
+    }
+
+    worker.postMessage({ type: 'MAGIC_PLANT_WATER' });
+
+    // Auto watering if speed > 1?
+    if (state.magicPlant.speed > 1 && !magicPlantWateringTimer) {
+        const delay = 1000 / state.magicPlant.speed;
+        magicPlantWateringTimer = setTimeout(() => {
+            magicPlantWateringTimer = null;
+            if (ui.modalMagicPlant && !ui.modalMagicPlant.classList.contains('hidden')) {
+                handleMagicWaterClick();
+            }
+        }, delay);
+    }
+}
+
+function renderMagicPlantMilestones() {
+    if (!ui.magicMilestones || !magicPlantConfig.length) return;
+    ui.magicMilestones.innerHTML = '';
+
+    const mp = state.magicPlant;
+    const count = magicPlantConfig.length;
+    magicPlantConfig.forEach((cfg, idx) => {
+        const left = (idx / (count - 1)) * 100;
+        const isActive = cfg.level <= mp.level;
+        const hasFruit = mp.availableFruits && mp.availableFruits.includes(cfg.level);
+
+        const div = document.createElement('div');
+        div.className = `absolute bottom-0 flex flex-col items-center transform -translate-x-1/2 transition-all duration-500`;
+        div.style.left = `${left}%`;
+
+        let fruitHtml = '';
+        if (hasFruit) {
+            const costType = (cfg.bonus_type || "").toUpperCase();
+            const isGem = costType === 'GEM';
+            const fruitIcon = isGem ? '💎' : '💰'; // Using resource icons as "fruits" for maximum clarity, or stick to colored apples
+            const fruitColorClass = isGem ? 'drop-shadow-[0_0_15px_rgba(59,130,246,0.6)]' : 'drop-shadow-[0_0_15px_rgba(234,179,8,0.6)]';
+            const fruitEmoji = isGem ? '🔷' : '🔸'; // Or custom styled apple
+
+            // Let's use stylized apples with filters
+            const appleStyle = isGem
+                ? 'filter: hue-rotate(200deg) saturate(1.5) brightness(1.2);'
+                : 'filter: hue-rotate(50deg) saturate(2) brightness(1.2);';
+
+            fruitHtml = `
+                <div class="absolute -top-12 flex flex-col items-center group/fruit animate-bounce cursor-pointer z-50" onclick="harvestMagicFruit(${cfg.level}, event)">
+                    <div class="text-3xl transition-transform hover:scale-125" style="${appleStyle} ${fruitColorClass}">🍎</div>
+                    <!-- Tooltip (Flip to show downwards) -->
+                    <div class="absolute top-full mt-3 bg-slate-900/95 text-white p-2.5 rounded-xl border border-white/20 shadow-2xl backdrop-blur-md opacity-0 group-hover/fruit:opacity-100 transition-all pointer-events-none -translate-y-2 group-hover/fruit:translate-y-0 min-w-[140px] pointer-events-none z-[100]">
+                        <div class="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1 border-b border-white/10 pb-1">摘取果實 Lv.${cfg.level}</div>
+                        <div class="flex justify-between items-center text-[9px] mb-1 text-gray-400 font-bold uppercase">
+                            <span>費用:</span>
+                            <span class="${isGem ? 'text-blue-400' : 'text-amber-400'} font-black">${cfg.bonus_value.toLocaleString()} ${cfg.bonus_type}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-[9px] text-gray-400 font-bold uppercase">
+                            <span>獎勵:</span>
+                            <span class="text-green-400">${cfg.fruit_reward_value.toLocaleString()} ${cfg.fruit_reward_type}</span>
+                        </div>
+                        <!-- Arrow (Moved to top) -->
+                        <div class="w-2 h-2 bg-slate-900 border-l border-t border-white/20 rotate-45 absolute -top-1 left-1/2 -translate-x-1/2"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        div.innerHTML = `
+            ${fruitHtml}
+            <div class="text-[10px] font-mono font-black ${isActive ? 'text-green-400' : 'text-gray-500'} mb-1">Lv.${cfg.level}</div>
+            <div class="w-2.5 h-2.5 rounded-full border-2 ${isActive ? 'bg-green-500 border-white shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-gray-800 border-gray-600'}"></div>
+        `;
+        ui.magicMilestones.appendChild(div);
+    });
+}
+
+function harvestMagicFruit(level, event) {
+    if (event) event.stopPropagation();
+    worker.postMessage({ type: 'MAGIC_PLANT_HARVEST', payload: { level } });
+}
+
 
 
