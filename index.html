@@ -1949,14 +1949,15 @@
     <!-- Archaeology Activity Modal [NEW] -->
     <div id="archaeology-modal"
         class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-xl hidden opacity-0 transition-opacity duration-300">
-        <div
+        <div id="archaeology-modal-container"
             class="relative w-[1000px] max-w-[95vw] h-[720px] max-h-[92vh] bg-stone-900 rounded-[2.5rem] border-[3px] border-amber-600/40 shadow-[0_0_80px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col archaeology-modal-content">
 
             <!-- Brighter Inner Glow Overlay -->
             <div class="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/[0.03] to-transparent"></div>
 
             <!-- Header -->
-            <div class="h-20 flex items-center justify-between px-8 bg-black/50 border-b border-white/10 shrink-0 z-10">
+            <div id="archaeology-modal-header"
+                class="h-20 flex items-center justify-between px-8 bg-black/50 border-b border-white/10 shrink-0 z-10 cursor-move">
                 <div class="flex items-center gap-5">
                     <div
                         class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl shadow-lg shadow-amber-500/20 transform rotate-3">
@@ -1972,21 +1973,6 @@
                                     class="text-gray-400 font-black uppercase tracking-widest text-[10px]">Level:</span>
                                 <span id="archaeology-level-disp"
                                     class="text-amber-400 font-mono font-black text-sm">1</span>
-                            </div>
-                            <div
-                                class="text-xs flex items-center gap-3 bg-black/40 px-4 py-1 rounded-full border border-amber-500/20 shadow-inner">
-                                <span class="text-gray-400 font-black uppercase tracking-widest text-[9px]">群組切換</span>
-                                <div class="flex items-center gap-2">
-                                    <button onclick="switchArchaeologyGroup(1)"
-                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
-                                        id="arch-group-1">G1</button>
-                                    <button onclick="switchArchaeologyGroup(2)"
-                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
-                                        id="arch-group-2">G2</button>
-                                    <button onclick="switchArchaeologyGroup(3)"
-                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
-                                        id="arch-group-3">G3</button>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -2139,6 +2125,23 @@
                             <option value="10">10x</option>
                             <option value="50">50x</option>
                         </select>
+                    </div>
+
+                    <!-- Group Switcher (Moved here) -->
+                    <div
+                        class="flex items-center gap-4 bg-stone-800 px-5 rounded-2xl border border-white/10 shadow-inner">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">群組</span>
+                        <div class="flex items-center gap-2.5">
+                            <button onclick="switchArchaeologyGroup(1)"
+                                class="group-btn w-9 h-9 rounded-xl flex items-center justify-center bg-stone-900 text-xs font-black text-white border border-white/5 hover:bg-amber-600/40 transition-all active:scale-90"
+                                id="arch-group-1">G1</button>
+                            <button onclick="switchArchaeologyGroup(2)"
+                                class="group-btn w-9 h-9 rounded-xl flex items-center justify-center bg-stone-900 text-xs font-black text-white border border-white/5 hover:bg-amber-600/40 transition-all active:scale-90"
+                                id="arch-group-2">G2</button>
+                            <button onclick="switchArchaeologyGroup(3)"
+                                class="group-btn w-9 h-9 rounded-xl flex items-center justify-center bg-stone-900 text-xs font-black text-white border border-white/5 hover:bg-amber-600/40 transition-all active:scale-90"
+                                id="arch-group-3">G3</button>
+                        </div>
                     </div>
                 </div>
 

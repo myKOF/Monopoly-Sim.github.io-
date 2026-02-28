@@ -2631,6 +2631,8 @@ enableDraggable(document.getElementById('partner-side-panel'), document.getEleme
 enableDraggable(document.getElementById('volcano-side-panel'), document.getElementById('volcano-side-panel'));
 enableDraggable(document.getElementById('scratch-card-side-panel'), document.getElementById('scratch-card-side-panel'));
 enableDraggable(document.getElementById('activity-traveler-panel'), document.getElementById('activity-traveler-panel'));
+enableDraggable(document.getElementById('activity-archaeology-panel'), document.getElementById('activity-archaeology-panel'));
+enableDraggable(document.getElementById('archaeology-modal-container'), document.getElementById('archaeology-modal-header'));
 // --- Export Logic ---
 const btnResetTour = document.getElementById('btn-reset-tournament');
 if (btnResetTour) {
@@ -2760,7 +2762,7 @@ function enableDraggable(el, handle) {
 
 
 function resetDraggablePositions() {
-    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel', 'activity-traveler-panel'];
+    const ids = ['activity-panel', 'tournament-panel', 'roulette-side-panel', '2048-side-panel', 'partner-side-panel', 'volcano-side-panel', 'scratch-card-side-panel', 'activity-traveler-panel', 'activity-archaeology-panel', 'archaeology-modal-container'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
