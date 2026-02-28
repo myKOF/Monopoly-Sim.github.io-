@@ -66,6 +66,21 @@ let state = {
         stageConfig: [],
         rewardConfig: [],
         stats: { totalGames: 1, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
+    },
+    archaeology: {
+        level: 1,
+        group: 1,
+        tokens: 100,
+        board: [],
+        targetItems: [],
+        foundItemsCount: 0,
+        autoDig: false,
+        speed: 1,
+        itemConfigs: [],
+        rewardConfigs: [],
+        currentStageConfig: null,
+        isTransitioning: false,
+        stats: { totalDigs: 0, totalTokensUsed: 0 }
     }
 };
 
@@ -229,6 +244,7 @@ self.onmessage = function (e) {
             if (payload.volcanoConfig !== undefined) state.volcano.config = payload.volcanoConfig; // [NEW]
             if (payload.scratchTokens !== undefined) state.scratchCard.tokens = payload.scratchTokens;
             if (payload.scratchMultiplier !== undefined) state.scratchCard.multiplier = payload.scratchMultiplier;
+            if (payload.archaeologyTokens !== undefined) state.archaeology.tokens = payload.archaeologyTokens;
             sendUpdate();
             break;
 
@@ -459,6 +475,32 @@ self.onmessage = function (e) {
         case 'TRAVEL_SWITCH_CURRENCY':
             state.travelEvent.currencyType = state.travelEvent.currencyType === 'GOLD' ? 'GEM' : 'GOLD';
             handleTravelReset(); // Always reset to Level 1 when switching
+            sendUpdate();
+            break;
+        case 'INIT_ARCHAEOLOGY_CONFIG':
+            state.archaeology.itemConfigs = payload.itemConfig || [];
+            state.archaeology.rewardConfigs = payload.rewardConfig || [];
+            initArchaeologyStage();
+            sendUpdate();
+            break;
+        case 'ARCHAEOLOGY_DIG':
+            handleArchaeologyDig(payload.index);
+            break;
+        case 'ARCHAEOLOGY_SET_AUTO':
+            state.archaeology.autoDig = payload.enabled;
+            if (state.archaeology.autoDig) runArchaeologyAuto();
+            sendUpdate();
+            break;
+        case 'ARCHAEOLOGY_SET_SPEED':
+            state.archaeology.speed = payload.speed;
+            sendUpdate();
+            break;
+        case 'ARCHAEOLOGY_RESET':
+            state.archaeology.level = 1;
+            state.archaeology.group = 1;
+            state.archaeology.foundItemsCount = 0;
+            state.archaeology.stats = { totalDigs: 0, totalTokensUsed: 0 };
+            initArchaeologyStage();
             sendUpdate();
             break;
     }
@@ -1191,6 +1233,19 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             isFailed: state.travelEvent.isFailed,
             stats: state.travelEvent.stats,
             stageConfig: state.travelEvent.stageConfig
+        },
+        archaeology: {
+            level: state.archaeology.level,
+            group: state.archaeology.group,
+            tokens: state.archaeology.tokens,
+            board: state.archaeology.board,
+            targetItems: state.archaeology.targetItems,
+            foundItemsCount: state.archaeology.foundItemsCount,
+            autoDig: state.archaeology.autoDig,
+            speed: state.archaeology.speed,
+            currentStageConfig: state.archaeology.currentStageConfig,
+            stats: state.archaeology.stats,
+            rewardConfigs: state.archaeology.rewardConfigs
         }
     };
 
@@ -2072,5 +2127,239 @@ function grantTravelReward(type, value, isMilestone = false) {
         state.earnedDiceBreakdown['旅行家'] = (state.earnedDiceBreakdown['旅行家'] || 0) + value;
         recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：骰子 ${value}` });
     }
+}
+
+// --- Archaeology Activity Logic [NEW] ---
+function initArchaeologyStage() {
+    const arch = state.archaeology;
+    const stageCfg = arch.itemConfigs.find(c => c.level === arch.level);
+    if (!stageCfg) return;
+
+    arch.currentStageConfig = stageCfg;
+    const [rows, cols] = stageCfg.stage_area.split('_').map(Number);
+
+    // Initialize empty board
+    arch.board = new Array(rows * cols).fill(null).map(() => ({ isRevealed: false, itemId: null, instanceId: null }));
+    arch.targetItems = [];
+
+    // Items to place: filter keys that start with 'cell_' and have value > 0
+    const itemsToPlace = [];
+    Object.keys(stageCfg).forEach(key => {
+        if (key.startsWith('cell_') && stageCfg[key] > 0) {
+            const count = stageCfg[key];
+            const sizeStr = key.replace('cell_', ''); // "4_1", "2_2", etc.
+            for (let i = 0; i < count; i++) {
+                itemsToPlace.push({ id: key, size: sizeStr });
+            }
+        }
+    });
+
+    // Place items randomly
+    itemsToPlace.forEach((item, index) => {
+        let placed = false;
+        let attempts = 0;
+        const [w_base, h_base] = item.size.split('_').map(Number);
+
+        while (!placed && attempts < 100) {
+            attempts++;
+            // Random orientation
+            const isVertical = Math.random() > 0.5;
+            const w = isVertical ? h_base : w_base;
+            const h = isVertical ? w_base : h_base;
+
+            const r = Math.floor(Math.random() * (rows - h + 1));
+            const c = Math.floor(Math.random() * (cols - w + 1));
+
+            if (r + h > rows || c + w > cols) continue;
+
+            // Check overlap
+            let overlap = false;
+            for (let i = 0; i < h; i++) {
+                for (let j = 0; j < w; j++) {
+                    const cellIdx = (r + i) * cols + (c + j);
+                    if (arch.board[cellIdx].itemId !== null) {
+                        overlap = true;
+                        break;
+                    }
+                }
+                if (overlap) break;
+            }
+
+            if (!overlap) {
+                // Place it
+                const instanceId = index;
+                const cells = [];
+                for (let i = 0; i < h; i++) {
+                    for (let j = 0; j < w; j++) {
+                        const idx = (r + i) * cols + (c + j);
+                        arch.board[idx].itemId = item.id;
+                        arch.board[idx].instanceId = instanceId;
+                        cells.push(idx);
+                    }
+                }
+                arch.targetItems.push({
+                    id: item.id,
+                    instanceId: instanceId,
+                    size: item.size,
+                    cells: cells,
+                    isFound: false,
+                    w: w,
+                    h: h
+                });
+                placed = true;
+            }
+        }
+    });
+}
+
+function handleArchaeologyDig(index) {
+    const arch = state.archaeology;
+    if (arch.tokens <= 0) return;
+    if (arch.board[index].isRevealed) return;
+
+    arch.tokens--;
+    arch.stats.totalTokensUsed++;
+    arch.board[index].isRevealed = true;
+    arch.stats.totalDigs++;
+
+    const cell = arch.board[index];
+    if (cell.itemId) {
+        // Check if item is now fully found
+        const item = arch.targetItems.find(it => it.id === cell.itemId && it.instanceId === cell.instanceId);
+        if (item) {
+            const allRevealed = item.cells.every(idx => arch.board[idx].isRevealed);
+            if (allRevealed) {
+                item.isFound = true;
+                arch.foundItemsCount++;
+
+                // Check level completion
+                const allItemsFound = arch.targetItems.every(it => it.isFound);
+                if (allItemsFound) {
+                    processArchaeologyLevelComplete();
+                }
+            }
+        }
+    }
+
+    sendUpdate();
+}
+
+function processArchaeologyLevelComplete() {
+    const arch = state.archaeology;
+    if (arch.isTransitioning) return;
+    arch.isTransitioning = true;
+
+    // Grant Reward
+    const reward = arch.rewardConfigs.find(r => r.group === arch.group && r.level === arch.level);
+    if (reward) {
+        grantArchaeologyReward(reward.reward_type, reward.reward_spec, reward.reward_value, `考古學關卡 ${arch.level} 獎勵`);
+    }
+
+    // Delay before next level (2 seconds base, affected by speed multiplier)
+    const delay = 2000 / arch.speed;
+
+    setTimeout(() => {
+        // Move to next level
+        arch.level++;
+
+        // Check if group is finished
+        const nextLevelReward = arch.rewardConfigs.find(r => r.group === arch.group && r.level === arch.level);
+        if (!nextLevelReward) {
+            const nextGroupReward = arch.rewardConfigs.find(r => r.group === arch.group + 1);
+            if (nextGroupReward) {
+                arch.group++;
+            } else {
+                arch.level = 1;
+                arch.group = 1;
+            }
+        }
+
+        initArchaeologyStage();
+        arch.isTransitioning = false;
+        sendUpdate();
+
+        // Resume auto if enabled
+        if (arch.autoDig) runArchaeologyAuto();
+    }, delay);
+
+    sendUpdate();
+}
+
+function runArchaeologyAuto() {
+    if (!state.archaeology.autoDig || state.archaeology.isTransitioning) return;
+    if (state.archaeology.tokens <= 0) {
+        state.archaeology.autoDig = false;
+        sendUpdate();
+        return;
+    }
+
+    const arch = state.archaeology;
+
+    // 1. Priority: Find hit cells of items that are NOT fully found yet
+    // and dig their UNREVEALED cells
+    let targetIndex = -1;
+
+    // Find all items that are partially revealed but not found
+    const partialItems = arch.targetItems.filter(item => {
+        if (item.isFound) return false;
+        // Check if at least one cell is revealed
+        return item.cells.some(idx => arch.board[idx].isRevealed);
+    });
+
+    if (partialItems.length > 0) {
+        // Pick one partial item and find its first unrevealed cell
+        for (const item of partialItems) {
+            const unrevealedIdx = item.cells.find(idx => !arch.board[idx].isRevealed);
+            if (unrevealedIdx !== undefined) {
+                targetIndex = unrevealedIdx;
+                break;
+            }
+        }
+    }
+
+    // 2. Fallback: Random unrevealed cell
+    if (targetIndex === -1) {
+        const unrevealedIndices = [];
+        arch.board.forEach((cell, idx) => {
+            if (!cell.isRevealed) unrevealedIndices.push(idx);
+        });
+        if (unrevealedIndices.length > 0) {
+            targetIndex = unrevealedIndices[Math.floor(Math.random() * unrevealedIndices.length)];
+        }
+    }
+
+    if (targetIndex !== -1) {
+        handleArchaeologyDig(targetIndex);
+    } else {
+        state.archaeology.autoDig = false;
+        sendUpdate();
+        return;
+    }
+
+    if (state.archaeology.autoDig) {
+        const delay = (1000 / arch.speed);
+        setTimeout(runArchaeologyAuto, delay);
+    }
+}
+
+function grantArchaeologyReward(type, spec, value, source) {
+    if (type === 'DICE') {
+        state.dice += value;
+        state.totalEarnedDice += value;
+        state.earnedDiceBreakdown[source] = (state.earnedDiceBreakdown[source] || 0) + value;
+    } else if (type === 'COIN') {
+        addMoney(value, 'INCOME', source);
+    } else if (type === 'GEM') {
+        state.gems += value;
+    }
+
+    recordLog({
+        turn: state.turn,
+        position: state.position,
+        event: "EVENT_REWARD",
+        detail: `${source}: ${type} x${value}`,
+        delta_gold: type === 'COIN' ? value : 0,
+        current_balance: state.money
+    });
 }
 

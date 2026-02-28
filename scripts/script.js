@@ -148,6 +148,45 @@ function parseRouletteCSV(csvText) {
     return config;
 }
 
+// [NEW] Parse Archaeological Item CSV
+function parseArchaeologicalItemCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 12) return null;
+        return {
+            group: parseInt(cols[0]),
+            level: parseInt(cols[1]),
+            stage_area: cols[2],
+            cell_1_1: parseInt(cols[3]) || 0,
+            cell_2_1: parseInt(cols[4]) || 0,
+            cell_3_1: parseInt(cols[5]) || 0,
+            cell_4_1: parseInt(cols[6]) || 0,
+            cell_2_2: parseInt(cols[7]) || 0,
+            cell_3_2: parseInt(cols[8]) || 0,
+            cell_4_2: parseInt(cols[9]) || 0,
+            cell_3_3: parseInt(cols[10]) || 0,
+            cell_4_3: parseInt(cols[11]) || 0
+        };
+    }).filter(x => x);
+}
+
+// [NEW] Parse Archaeological Reward CSV
+function parseArchaeologicalRewardCSV(text) {
+    const lines = text.trim().split('\n');
+    return lines.slice(1).map(line => {
+        const cols = line.trim().split(',');
+        if (cols.length < 5) return null;
+        return {
+            group: parseInt(cols[0]),
+            level: parseInt(cols[1]),
+            reward_type: cols[2],
+            reward_spec: cols[3],
+            reward_value: parseInt(cols[4])
+        };
+    }).filter(x => x);
+}
+
 // [NEW] Parse Partner Game CSV
 function parsePartnerGameCSV(csvText) {
     const lines = csvText.trim().split('\n');
@@ -279,6 +318,17 @@ let state = {
         position: 10,
         config: [],
         stats: { totalHits: 0, totalKills: 0 }
+    },
+    archaeology: {
+        level: 1,
+        group: 1,
+        tokens: 100,
+        board: [],
+        targetItems: [],
+        foundItemsCount: 0,
+        autoDig: false,
+        speed: 1,
+        stats: { totalDigs: 0, totalTokensUsed: 0 }
     }
 };
 
@@ -449,6 +499,23 @@ const ui = {
     dialogTravelerComplete: document.getElementById('traveler-complete-dialog'),
     btnTravelerReplay: document.getElementById('btn-traveler-replay'),
     travelerRepeatInput: document.getElementById('traveler-repeat-count'),
+
+    // [NEW] Archaeology DOM Elements
+    btnArchaeologyOpen: document.getElementById('btn-archaeology-open'),
+    modalArchaeology: document.getElementById('archaeology-modal'),
+    btnCloseArchaeology: document.getElementById('btn-archaeology-close'),
+    archaeologyGrid: document.getElementById('archaeology-grid'),
+    archaeologyLevelDisp: document.getElementById('archaeology-level-disp'),
+    archaeologyProgressBar: document.getElementById('archaeology-progress-bar'),
+    archaeologyRewardProgress: document.getElementById('archaeology-reward-progress'),
+    archaeologyTargets: document.getElementById('archaeology-targets'),
+    archaeologyTokens: document.getElementById('archaeology-tokens'),
+    btnArchaeologyAuto: document.getElementById('btn-archaeology-auto'),
+    dotArchaeologyAuto: document.getElementById('archaeology-auto-dot'),
+    archaeologySpeed: document.getElementById('archaeology-speed'),
+    btnArchaeologyReset: document.getElementById('btn-archaeology-reset'),
+    statArchaeologySpent: document.getElementById('archaeology-stat-spent-tokens'),
+    statArchaeologyFound: document.getElementById('archaeology-stat-items-found'),
 };
 
 const FALLBACK_DATA = [
@@ -512,6 +579,7 @@ function workerMessageHandler(e) {
         if (payload.volcano) { state.volcano = payload.volcano; updateVolcanoUI(); }
         if (payload.scratchCard) { state.scratchCard = payload.scratchCard; updateScratchUI(); }
         if (payload.travelEvent) { state.travelEvent = payload.travelEvent; renderTravelerEvent(); }
+        if (payload.archaeology) { state.archaeology = payload.archaeology; renderArchaeology(); }
 
         updateLogs(payload.logs);
 
@@ -900,6 +968,25 @@ async function initGame() {
         }
     } catch (e) {
         console.warn("Partner Game Config Load Failed", e);
+    }
+
+    // 7. Load Archaeology Config (New)
+    try {
+        const resAI = await fetch('./config/archaeological_item.csv');
+        let archItemConfig = [];
+        if (resAI.ok) archItemConfig = parseArchaeologicalItemCSV(await resAI.text());
+
+        const resAR = await fetch('./config/archaeological_reward.csv');
+        let archRewardConfig = [];
+        if (resAR.ok) archRewardConfig = parseArchaeologicalRewardCSV(await resAR.text());
+
+        worker.postMessage({
+            type: 'INIT_ARCHAEOLOGY_CONFIG',
+            payload: { itemConfig: archItemConfig, rewardConfig: archRewardConfig }
+        });
+        console.log("Archaeology Config Loaded:", archItemConfig.length, "items");
+    } catch (e) {
+        console.warn("Archaeology Config Load Failed", e);
     }
 
     console.log("Worker Initialized");
@@ -3963,6 +4050,308 @@ function closeTravelerCompleteDialog() {
         content.style.opacity = '0';
     }
     setTimeout(() => ui.dialogTravelerComplete.classList.add('hidden'), 500);
+}
+
+// --- Archaeology Logic [NEW] ---
+function renderArchaeology() {
+    const arch = state.archaeology;
+    if (!arch) return;
+
+    // Update level display
+    if (ui.archaeologyLevelDisp) ui.archaeologyLevelDisp.textContent = `${arch.level}`;
+
+    // Update tokens
+    if (ui.archaeologyTokens) ui.archaeologyTokens.value = arch.tokens;
+
+    // Update stats
+    if (ui.statArchaeologySpent) ui.statArchaeologySpent.textContent = arch.stats.totalTokensUsed;
+    if (ui.statArchaeologyFound) ui.statArchaeologyFound.textContent = arch.foundItemsCount;
+
+    // Render Progress Bar & Rewards
+    renderArchaeologyRewards();
+
+    // Render Target Items Silhouettes
+    renderArchaeologyTargets();
+
+    // Render Grid
+    renderArchaeologyGrid();
+
+    // Update AUTO dot
+    if (ui.dotArchaeologyAuto) {
+        ui.dotArchaeologyAuto.className = `w-2.5 h-2.5 rounded-full transition-all duration-300 ${arch.autoDig ? 'bg-amber-500 shadow-[0_0_10px_rgba(242,158,11,0.8)]' : 'bg-gray-600'}`;
+    }
+}
+
+function renderArchaeologyRewards() {
+    const arch = state.archaeology;
+    const rewards = arch.rewardConfigs || [];
+    const container = ui.archaeologyRewardProgress;
+    if (!container) return;
+
+    container.innerHTML = '';
+    // Show current group rewards
+    const currentGroup = rewards.filter(r => r.group === arch.group);
+
+    currentGroup.forEach(r => {
+        const div = document.createElement('div');
+        div.className = `flex flex-col items-center gap-1 relative group ${r.level <= arch.level ? 'opacity-100' : 'opacity-40'}`;
+
+        const icon = getRewardIcon(r.reward_type);
+        div.innerHTML = `
+            <div class="text-[10px] font-mono font-bold text-gray-500">${r.level}</div>
+            <div class="w-8 h-8 rounded-lg bg-stone-800 border border-white/10 flex items-center justify-center text-sm ${r.level < arch.level ? 'border-amber-500/50 grayscale' : (r.level === arch.level ? 'border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]' : '')}">
+                ${icon}
+            </div>
+            ${r.level < arch.level ? '<div class="absolute -top-1 -right-1 text-[10px] bg-green-500 rounded-full w-4 h-4 flex items-center justify-center border border-white/20">✓</div>' : ''}
+            
+            <!-- Tooltip -->
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-2.5 py-1.5 bg-stone-800 border border-white/20 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-[120] shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center gap-2 transform translate-y-2 group-hover:translate-y-0">
+                <div class="w-6 h-6 rounded bg-black/40 flex items-center justify-center text-base">${icon}</div>
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-gray-400 font-bold uppercase tracking-tighter leading-none mb-0.5">${r.reward_type}</span>
+                    <span class="font-mono font-black text-amber-400 leading-none">${Number(r.reward_value).toLocaleString()}</span>
+                </div>
+                <!-- Arrow -->
+                <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-stone-800"></div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+
+    // Update bar width
+    if (ui.archaeologyProgressBar) {
+        const maxLevel = currentGroup.length > 0 ? currentGroup[currentGroup.length - 1].level : 1;
+        const pct = (arch.level / maxLevel) * 100;
+        ui.archaeologyProgressBar.style.width = `${Math.min(100, pct)}%`;
+    }
+}
+
+// Helper for archaeology item icons
+function getArchaeologyItemIcon(id) {
+    const mapping = {
+        'cell_1_1': '🏺', // Pottery
+        'cell_2_1': '🦴', // Bone
+        'cell_3_1': '🗡️', // Sword
+        'cell_4_1': '📜', // Scroll
+        'cell_2_2': '🧱', // Tablet
+        'cell_3_2': '🥣', // Bowl
+        'cell_4_2': '👑', // Crown
+        'cell_3_3': '🗿', // Statue
+        'cell_4_3': '🦖'  // Fossil
+    };
+    return mapping[id] || '🏺';
+}
+
+function renderArchaeologyTargets() {
+    const arch = state.archaeology;
+    const container = ui.archaeologyTargets;
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    // Auto scale columns based on count
+    const itemsCount = arch.targetItems.length;
+    if (itemsCount > 4) {
+        container.classList.remove('grid-cols-1');
+        container.classList.add('grid-cols-2');
+    } else {
+        container.classList.remove('grid-cols-2');
+        container.classList.add('grid-cols-1');
+    }
+
+    arch.targetItems.forEach(item => {
+        const div = document.createElement('div');
+        div.className = `p-1 rounded-lg bg-stone-900 border border-white/5 flex flex-col items-center gap-1 transition-all ${item.isFound ? 'bg-amber-900/20 border-amber-500/30' : 'opacity-60'}`;
+
+        // Icon and Name
+        const icon = getArchaeologyItemIcon(item.id);
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'flex items-center gap-1.5 mb-1';
+        headerDiv.innerHTML = `
+            <span class="text-base ${item.isFound ? '' : 'filter grayscale blur-[0.5px]'}">${icon}</span>
+            <span class="text-[8px] font-black text-gray-300 uppercase tracking-tight">${item.id.replace('cell_', '')}</span>
+        `;
+        div.appendChild(headerDiv);
+
+        // Render a mini preview of the shape
+        const shapeDiv = document.createElement('div');
+        const [w, h] = item.size.split('_').map(Number);
+        shapeDiv.className = `grid gap-0.5`;
+        shapeDiv.style.gridTemplateColumns = `repeat(${w}, 1fr)`;
+
+        for (let i = 0; i < w * h; i++) {
+            const cell = document.createElement('div');
+            cell.className = `w-1 h-1 rounded-[1px] ${item.isFound ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.5)]' : 'bg-stone-700'}`;
+            shapeDiv.appendChild(cell);
+        }
+
+        div.appendChild(shapeDiv);
+        if (item.isFound) {
+            const foundDiv = document.createElement('div');
+            foundDiv.className = 'text-[5px] font-black text-amber-500 uppercase mt-0.5';
+            foundDiv.textContent = 'DONE';
+            div.appendChild(foundDiv);
+        }
+
+        container.appendChild(div);
+    });
+}
+
+function renderArchaeologyGrid() {
+    const arch = state.archaeology;
+    const container = ui.archaeologyGrid;
+    if (!container) return;
+
+    if (!arch.currentStageConfig) return;
+    const [rows, cols] = arch.currentStageConfig.stage_area.split('_').map(Number);
+
+    container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    container.style.gap = '2px';
+    container.innerHTML = '';
+
+    const board = arch.board || [];
+    const baseCellSize = (window.innerWidth < 640) ? 20 : 25;
+
+    board.forEach((cellData, index) => {
+        const btn = document.createElement('button');
+        btn.className = `w-5 h-5 sm:w-7 sm:h-7 rounded-[3px] border border-white/5 transition-all duration-300 flex items-center justify-center overflow-hidden active:scale-95 relative group/cell`;
+
+        if (!cellData.isRevealed) {
+            btn.className += ` bg-stone-700 hover:bg-stone-600 shadow-inner border-stone-800`;
+            btn.innerHTML = `<span class="opacity-15 text-[6px] group-hover/cell:opacity-35 transition-opacity">🪨</span>`;
+        } else {
+            if (cellData.itemId !== null) {
+                const item = arch.targetItems.find(it => it.id === cellData.itemId && it.instanceId === cellData.instanceId);
+                const isItemFound = item && item.isFound;
+                const icon = getArchaeologyItemIcon(cellData.itemId);
+
+                btn.className += isItemFound
+                    ? ` bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(242,158,11,0.2)] z-10`
+                    : ` bg-stone-800 border-stone-700`;
+
+                // Calculate layout details for stretching
+                const r = Math.floor(index / cols);
+                const c = index % cols;
+                const itemIndices = item.cells;
+                const minRow = Math.min(...itemIndices.map(idx => Math.floor(idx / cols)));
+                const minCol = Math.min(...itemIndices.map(idx => idx % cols));
+                const maxRow = Math.max(...itemIndices.map(idx => Math.floor(idx / cols)));
+                const maxCol = Math.max(...itemIndices.map(idx => idx % cols));
+
+                const itemW = (maxCol - minCol + 1);
+                const itemH = (maxRow - minRow + 1);
+                const localX = c - minCol;
+                const localY = r - minRow;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none';
+
+                const span = document.createElement('span');
+                span.textContent = icon;
+                span.className = 'absolute flex items-center justify-center pointer-events-none';
+
+                // Base size for one tile
+                span.style.fontSize = `${baseCellSize * 0.8}px`;
+                span.style.left = '50%';
+                span.style.top = '50%';
+
+                // Offset relative to item center
+                const offsetX = ((itemW - 1) / 2 - localX) * 100;
+                const offsetY = ((itemH - 1) / 2 - localY) * 100;
+
+                // STRETCH: scale according to item bounds
+                span.style.transform = `translate(calc(-50% + ${offsetX}%), calc(-50% + ${offsetY}%)) scale(${itemW}, ${itemH})`;
+
+                if (!isItemFound) span.className += ' opacity-50 grayscale-[0.6]';
+
+                wrapper.appendChild(span);
+                btn.appendChild(wrapper);
+            } else {
+                btn.className += ` bg-stone-950/40 border-stone-900/50 text-stone-800`;
+                btn.innerHTML = '<span class="opacity-10 text-[6px]">🕳️</span>';
+            }
+        }
+
+        btn.onclick = () => {
+            if (!cellData.isRevealed && arch.tokens > 0) {
+                worker.postMessage({ type: 'ARCHAEOLOGY_DIG', payload: { index } });
+            }
+        };
+        container.appendChild(btn);
+    });
+}
+
+// Helper for reward icons (Unified)
+function getRewardIcon(type) {
+    switch (type) {
+        case 'DICE': return '🎲';
+        case 'COIN': return '💰';
+        case 'GEM': return '💎';
+        default: return '🎁';
+    }
+}
+
+// --- Archaeology Event Listeners ---
+if (ui.btnArchaeologyOpen) {
+    ui.btnArchaeologyOpen.addEventListener('click', () => {
+        if (ui.modalArchaeology) {
+            ui.modalArchaeology.classList.remove('hidden');
+            if (ui.btnResetUI) ui.btnResetUI.classList.add('hidden');
+            setTimeout(() => {
+                ui.modalArchaeology.classList.add('opacity-100');
+                const content = ui.modalArchaeology.querySelector('.archaeology-modal-content');
+                if (content) {
+                    content.style.transform = 'scale(1)';
+                    content.style.opacity = '1';
+                }
+            }, 10);
+            renderArchaeology();
+        }
+    });
+}
+
+if (ui.btnCloseArchaeology) {
+    ui.btnCloseArchaeology.addEventListener('click', () => {
+        if (ui.modalArchaeology) {
+            ui.modalArchaeology.classList.remove('opacity-100');
+            const content = ui.modalArchaeology.querySelector('.archaeology-modal-content');
+            if (content) {
+                content.style.transform = 'scale(0.9)';
+                content.style.opacity = '0';
+            }
+            setTimeout(() => {
+                ui.modalArchaeology.classList.add('hidden');
+                if (ui.btnResetUI) ui.btnResetUI.classList.remove('hidden');
+            }, 300);
+        }
+    });
+}
+
+if (ui.btnArchaeologyAuto) {
+    ui.btnArchaeologyAuto.addEventListener('click', () => {
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: !state.archaeology.autoDig } });
+    });
+}
+
+if (ui.archaeologySpeed) {
+    ui.archaeologySpeed.addEventListener('change', () => {
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_SPEED', payload: { speed: parseInt(ui.archaeologySpeed.value) } });
+    });
+}
+
+if (ui.btnArchaeologyReset) {
+    ui.btnArchaeologyReset.addEventListener('click', () => {
+        if (confirm("確定要重置考古學活動嗎？這將清除所有進度並回到第 1 關。")) {
+            worker.postMessage({ type: 'ARCHAEOLOGY_RESET' });
+        }
+    });
+}
+
+if (ui.archaeologyTokens) {
+    ui.archaeologyTokens.addEventListener('change', () => {
+        const val = parseInt(ui.archaeologyTokens.value) || 0;
+        worker.postMessage({ type: 'UPDATE_CONFIG', payload: { archaeologyTokens: val } });
+    });
 }
 
 

@@ -315,7 +315,7 @@
 
             <!-- New Roulette Panel (Absolute in Middle Column) -->
             <div id="roulette-side-panel"
-                class="absolute top-[11.5rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl overflow-hidden group hover:border-orange-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none z-30">
+                class="absolute top-[7rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl overflow-hidden group hover:border-orange-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none z-30">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -left-10 -top-10 w-24 h-24 bg-orange-500/20 blur-[40px] rounded-full group-hover:bg-orange-500/30 transition-all">
@@ -343,7 +343,7 @@
 
             <!-- Scratch Card Panel (Absolute in Middle Column) -->
             <div id="scratch-card-side-panel"
-                class="absolute top-[18.25rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl overflow-hidden group hover:border-yellow-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none z-30">
+                class="absolute top-[13rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl overflow-hidden group hover:border-yellow-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none z-30">
                 <!-- Glow Effect -->
                 <div
                     class="absolute -right-10 -bottom-10 w-24 h-24 bg-yellow-500/20 blur-[40px] rounded-full group-hover:bg-yellow-500/30 transition-all">
@@ -371,7 +371,7 @@
 
             <!-- Traveler Event Module [NEW] -->
             <div id="activity-traveler-panel"
-                class="absolute top-[25rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl z-30 group hover:border-emerald-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                class="absolute top-[19rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl z-30 group hover:border-emerald-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
                 <div
                     class="absolute -right-10 -bottom-10 w-24 h-24 bg-emerald-500/10 blur-[40px] rounded-full group-hover:bg-emerald-500/20 transition-all">
                 </div>
@@ -391,6 +391,31 @@
                     <button id="btn-traveler-open"
                         class="w-full py-1.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-bold rounded shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
                         <span>開啟活動 (Quest)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Archaeology Activity Module [NEW] -->
+            <div id="activity-archaeology-panel"
+                class="absolute top-[25rem] right-[12.5rem] w-48 bg-vibe-card/90 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl shadow-2xl z-30 group hover:border-amber-500/30 transition-all duration-300 cursor-move active:cursor-grabbing select-none">
+                <div
+                    class="absolute -right-10 -bottom-10 w-24 h-24 bg-amber-500/10 blur-[40px] rounded-full group-hover:bg-amber-500/20 transition-all">
+                </div>
+
+                <div class="flex justify-between items-center relative z-10 mb-1">
+                    <h2 class="text-[10px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-1">
+                        <span class="text-base">⛏️</span>
+                        <div>
+                            <div>考古學活動</div>
+                            <div class="text-[8px] text-gray-400 leading-none">Archaeology Quest</div>
+                        </div>
+                    </h2>
+                </div>
+
+                <div class="relative z-10">
+                    <button id="btn-archaeology-open"
+                        class="w-full py-1.5 bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 text-white text-xs font-bold rounded shadow-lg shadow-amber-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <span>挖掘遺跡 (Dig)</span>
                     </button>
                 </div>
             </div>
@@ -1915,6 +1940,145 @@
                         class="w-full py-5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-3 group">
                         <span class="text-xl group-hover:rotate-12 transition-transform">🧭</span>
                         <span class="text-lg uppercase tracking-widest">點擊重新遊戲</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Archaeology Activity Modal [NEW] -->
+    <div id="archaeology-modal"
+        class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-xl hidden opacity-0 transition-opacity duration-300">
+        <div
+            class="relative w-[1000px] max-w-[95vw] h-[720px] max-h-[92vh] bg-stone-900 rounded-[2.5rem] border-[3px] border-amber-600/40 shadow-[0_0_80px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col archaeology-modal-content">
+
+            <!-- Brighter Inner Glow Overlay -->
+            <div class="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/[0.03] to-transparent"></div>
+
+            <!-- Header -->
+            <div class="h-20 flex items-center justify-between px-8 bg-black/50 border-b border-white/10 shrink-0 z-10">
+                <div class="flex items-center gap-5">
+                    <div
+                        class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl shadow-lg shadow-amber-500/20 transform rotate-3">
+                        ⛏️</div>
+                    <div>
+                        <h2 class="text-2xl font-black text-white tracking-tighter uppercase italic drop-shadow-sm">
+                            考古學活動 <span class="text-amber-500 not-italic ml-2 text-lg opacity-90">ARCHAEOLOGY
+                                QUEST</span></h2>
+                        <div class="flex gap-6 mt-1">
+                            <div
+                                class="text-xs flex items-center gap-2 bg-black/40 px-3 py-0.5 rounded-full border border-white/5">
+                                <span
+                                    class="text-gray-400 font-black uppercase tracking-widest text-[10px]">Level:</span>
+                                <span id="archaeology-level-disp"
+                                    class="text-amber-400 font-mono font-black text-sm">1/20</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button id="btn-archaeology-close"
+                    class="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center transition-all group active:scale-95">
+                    <span class="text-gray-400 group-hover:text-white text-2xl">✕</span>
+                </button>
+            </div>
+
+            <!-- Reward Progress Bar (Top) -->
+            <div class="w-full bg-black/30 p-4 border-b border-white/5 flex flex-col items-center shrink-0">
+                <div id="archaeology-reward-progress"
+                    class="flex justify-between items-end w-full max-w-4xl px-4 relative h-12 mb-2">
+                    <!-- Reward icons injected here -->
+                </div>
+                <div
+                    class="w-full max-w-4xl h-3 bg-black/60 rounded-full border border-white/10 relative shadow-inner overflow-hidden">
+                    <div id="archaeology-progress-bar"
+                        class="h-full bg-gradient-to-r from-amber-600 to-orange-400 w-0 transition-all duration-700">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 flex overflow-hidden min-h-0 relative">
+                <!-- Left: Target Items -->
+                <div class="w-52 bg-stone-950/50 p-3 flex flex-col border-r border-white/5">
+                    <h3
+                        class="text-[10px] font-black text-amber-500 mb-3 flex items-center gap-2 uppercase tracking-widest">
+                        <span>🎯</span> 考古目標
+                    </h3>
+                    <div id="archaeology-targets"
+                        class="grid grid-cols-1 gap-1.5 overflow-y-auto custom-scrollbar pr-1">
+                        <!-- Target items silhouettes injected here -->
+                    </div>
+                </div>
+
+                <!-- Center: Dig Grid -->
+                <div
+                    class="flex-1 flex flex-col items-center justify-center p-4 bg-[#0b1222]/20 relative overflow-hidden">
+                    <!-- Grid Container -->
+                    <div id="archaeology-grid-container"
+                        class="relative bg-stone-800 p-2 rounded-xl border-4 border-stone-700 shadow-2xl">
+                        <div id="archaeology-grid" class="grid gap-1">
+                            <!-- Grid cells injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Stats -->
+                <div
+                    class="w-52 bg-[#0a0f1d] p-4 flex flex-col border-l border-white/5 overflow-y-auto custom-scrollbar">
+                    <h3
+                        class="text-[10px] font-black text-amber-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
+                        <span>📊</span> 考古統計
+                    </h3>
+                    <div class="flex flex-col gap-3">
+                        <div class="bg-stone-800/80 p-3 rounded-xl border border-white/5 shadow-inner">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1">消耗代幣</div>
+                            <div id="archaeology-stat-spent-tokens"
+                                class="text-xl font-mono text-white font-black italic">0</div>
+                        </div>
+                        <div class="bg-stone-800/80 p-3 rounded-xl border border-white/5 shadow-inner">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1">收集物品</div>
+                            <div id="archaeology-stat-items-found"
+                                class="text-xl font-mono text-amber-400 font-black italic">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Bar: Controls -->
+            <div class="h-24 shrink-0 flex items-center justify-between bg-black/50 px-8 border-t border-white/10 z-10">
+                <div class="flex gap-4">
+                    <button id="btn-archaeology-auto"
+                        class="px-8 py-3 bg-stone-800 border-2 border-amber-600/30 rounded-2xl text-[11px] font-black tracking-widest uppercase hover:bg-amber-600/20 hover:border-amber-600/60 transition-all active:scale-95 flex items-center gap-3 group">
+                        <div id="archaeology-auto-dot"
+                            class="w-2.5 h-2.5 rounded-full bg-gray-600 transition-all duration-300"></div>
+                        <span class="text-gray-100 group-hover:text-white">AUTO</span>
+                    </button>
+                    <div class="flex items-center gap-3 bg-stone-800 px-5 rounded-2xl border border-white/10">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Speed</span>
+                        <select id="archaeology-speed"
+                            class="bg-transparent text-amber-500 font-black text-sm outline-none cursor-pointer">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                            <option value="50">50x</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Token Display (Center-ish) -->
+                <div
+                    class="flex items-center gap-4 bg-black/60 px-6 py-2 rounded-2xl border-2 border-amber-600/50 shadow-[0_0_20px_rgba(217,119,6,0.3)]">
+                    <span class="text-2xl">⛏️</span>
+                    <input type="number" id="archaeology-tokens"
+                        class="w-24 bg-transparent outline-none border-none text-2xl font-mono text-white font-black"
+                        value="100">
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="btn-archaeology-reset"
+                        class="w-12 h-12 bg-stone-800 hover:bg-red-500/15 hover:border-red-500/40 rounded-2xl border border-white/10 flex items-center justify-center transition-all group active:scale-95 shadow-md"
+                        title="重置活動">
+                        <span class="text-gray-400 group-hover:text-red-400 text-xl">🔄</span>
                     </button>
                 </div>
             </div>
