@@ -1971,7 +1971,22 @@
                                 <span
                                     class="text-gray-400 font-black uppercase tracking-widest text-[10px]">Level:</span>
                                 <span id="archaeology-level-disp"
-                                    class="text-amber-400 font-mono font-black text-sm">1/20</span>
+                                    class="text-amber-400 font-mono font-black text-sm">1</span>
+                            </div>
+                            <div
+                                class="text-xs flex items-center gap-3 bg-black/40 px-4 py-1 rounded-full border border-amber-500/20 shadow-inner">
+                                <span class="text-gray-400 font-black uppercase tracking-widest text-[9px]">群組切換</span>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="switchArchaeologyGroup(1)"
+                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
+                                        id="arch-group-1">G1</button>
+                                    <button onclick="switchArchaeologyGroup(2)"
+                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
+                                        id="arch-group-2">G2</button>
+                                    <button onclick="switchArchaeologyGroup(3)"
+                                        class="group-btn px-2.5 py-0.5 rounded-md bg-stone-800 text-[10px] font-black text-white border border-white/5 hover:bg-amber-600/30 transition-all active:scale-90"
+                                        id="arch-group-3">G3</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2018,26 +2033,88 @@
                         <div id="archaeology-grid" class="grid gap-1">
                             <!-- Grid cells injected here -->
                         </div>
+
+                        <!-- Completion Overlay (Re-implemented) -->
+                        <div id="archaeology-finish-overlay"
+                            class="absolute inset-0 bg-stone-950/98 backdrop-blur-2xl flex flex-col items-center justify-center rounded-lg z-[100] hidden border-2 border-amber-500/60 shadow-[0_0_100px_rgba(245,158,11,0.3)]">
+                            <div class="text-8xl mb-8 animate-bounce drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]">🏆
+                            </div>
+                            <h2
+                                class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-300 to-amber-600 uppercase tracking-tighter drop-shadow-lg">
+                                考古傳奇大師</h2>
+                            <p class="text-white font-black text-lg mt-3 px-8 text-center leading-relaxed">
+                                不可思議！您已成功挖掘出<br><span class="text-amber-400">目前群組</span>的所有絕世文物！</p>
+                            <div class="mt-10 flex flex-col gap-4">
+                                <button onclick="closeArchaeologyModal()"
+                                    class="px-12 py-4 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-black rounded-2xl transition-all shadow-[0_10px_30px_rgba(0,0,0,0.6)] active:scale-95 border-b-4 border-amber-800 text-base uppercase tracking-widest min-w-[200px]">
+                                    結束探索
+                                </button>
+                                <p
+                                    class="text-[10px] text-gray-500 text-center uppercase tracking-widest font-black opacity-60">
+                                    或切換群組繼續您的冒險</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Right: Stats -->
                 <div
-                    class="w-52 bg-[#0a0f1d] p-4 flex flex-col border-l border-white/5 overflow-y-auto custom-scrollbar">
+                    class="w-52 bg-[#0a0f1d] p-3 flex flex-col border-l border-white/5 overflow-y-auto custom-scrollbar">
                     <h3
                         class="text-[10px] font-black text-amber-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
                         <span>📊</span> 考古統計
                     </h3>
-                    <div class="flex flex-col gap-3">
-                        <div class="bg-stone-800/80 p-3 rounded-xl border border-white/5 shadow-inner">
-                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1">消耗代幣</div>
+                    <div class="flex flex-col gap-1.5">
+                        <!-- Tokens Spent -->
+                        <div class="bg-stone-800/80 p-1.5 rounded-lg border border-white/5 shadow-inner">
+                            <div class="text-[7px] text-gray-500 uppercase font-black mb-0.5">消耗代幣</div>
                             <div id="archaeology-stat-spent-tokens"
-                                class="text-xl font-mono text-white font-black italic">0</div>
+                                class="text-base font-mono text-white font-black italic leading-none">0</div>
                         </div>
-                        <div class="bg-stone-800/80 p-3 rounded-xl border border-white/5 shadow-inner">
-                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1">收集物品</div>
-                            <div id="archaeology-stat-items-found"
-                                class="text-xl font-mono text-amber-400 font-black italic">0</div>
+
+                        <!-- Rewards Grid -->
+                        <div class="grid grid-cols-1 gap-1.5">
+                            <div
+                                class="bg-stone-800/80 p-1.5 rounded-lg border border-white/5 shadow-inner flex flex-col">
+                                <div class="text-[7px] text-gray-500 uppercase font-black mb-0.5">總得骰子</div>
+                                <div class="flex items-center gap-1.5 leading-none">
+                                    <span class="text-xs">🎲</span>
+                                    <div id="archaeology-stat-total-dice"
+                                        class="text-base font-mono text-white font-black italic">0</div>
+                                </div>
+                            </div>
+                            <div
+                                class="bg-stone-800/80 p-1.5 rounded-lg border border-white/5 shadow-inner flex flex-col">
+                                <div class="text-[7px] text-gray-500 uppercase font-black mb-0.5">總得金幣</div>
+                                <div class="flex items-center gap-1.5 leading-none">
+                                    <span class="text-xs">💰</span>
+                                    <div id="archaeology-stat-total-gold"
+                                        class="text-base font-mono text-white font-black italic">0</div>
+                                </div>
+                            </div>
+                            <div
+                                class="bg-stone-800/80 p-1.5 rounded-lg border border-white/5 shadow-inner flex flex-col">
+                                <div class="text-[7px] text-gray-500 uppercase font-black mb-0.5">總得寶石</div>
+                                <div class="flex items-center gap-1.5 leading-none">
+                                    <span class="text-xs">💎</span>
+                                    <div id="archaeology-stat-total-gem"
+                                        class="text-base font-mono text-white font-black italic">0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Empty Digs -->
+                        <div class="bg-stone-800/80 p-1.5 rounded-lg border border-white/5 shadow-inner">
+                            <div class="text-[7px] text-gray-500 uppercase font-black mb-0.5">總空格數</div>
+                            <div id="archaeology-stat-empty-digs"
+                                class="text-base font-mono text-gray-400 font-black italic leading-none">0</div>
+                        </div>
+
+                        <!-- Success Rate -->
+                        <div class="bg-stone-900/60 p-1.5 rounded-lg border border-amber-500/20 shadow-lg">
+                            <div class="text-[7px] text-amber-500/70 uppercase font-black mb-0.5">挖取成功率</div>
+                            <div id="archaeology-stat-success-rate"
+                                class="text-lg font-mono text-amber-400 font-black italic leading-none">0%</div>
                         </div>
                     </div>
                 </div>

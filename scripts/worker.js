@@ -80,7 +80,14 @@ let state = {
         rewardConfigs: [],
         currentStageConfig: null,
         isTransitioning: false,
-        stats: { totalDigs: 0, totalTokensUsed: 0 }
+        isFinished: false,
+        stats: {
+            totalTokensUsed: 0,
+            totalEarnedDice: 0,
+            totalEarnedGold: 0,
+            totalEarnedGem: 0,
+            totalEmptyDigs: 0
+        }
     }
 };
 
@@ -499,7 +506,24 @@ self.onmessage = function (e) {
             state.archaeology.level = 1;
             state.archaeology.group = 1;
             state.archaeology.foundItemsCount = 0;
-            state.archaeology.stats = { totalDigs: 0, totalTokensUsed: 0 };
+            state.archaeology.isFinished = false;
+            state.archaeology.autoDig = false; // Stop auto-dig on reset
+            // Reset all stats including earned resources
+            state.archaeology.stats = {
+                totalTokensUsed: 0,
+                totalEarnedDice: 0,
+                totalEarnedGold: 0,
+                totalEarnedGem: 0,
+                totalEmptyDigs: 0
+            };
+            initArchaeologyStage();
+            sendUpdate();
+            break;
+        case 'ARCHAEOLOGY_SWITCH_GROUP':
+            state.archaeology.group = payload.group || 1;
+            state.archaeology.level = 1;
+            state.archaeology.foundItemsCount = 0;
+            state.archaeology.isFinished = false;
             initArchaeologyStage();
             sendUpdate();
             break;
@@ -2214,13 +2238,16 @@ function initArchaeologyStage() {
 
 function handleArchaeologyDig(index) {
     const arch = state.archaeology;
-    if (arch.tokens <= 0) return;
+    if (arch.isFinished || arch.isTransitioning || arch.tokens <= 0) return;
     if (arch.board[index].isRevealed) return;
 
     arch.tokens--;
     arch.stats.totalTokensUsed++;
     arch.board[index].isRevealed = true;
-    arch.stats.totalDigs++;
+
+    if (arch.board[index].itemId === null) {
+        arch.stats.totalEmptyDigs++;
+    }
 
     const cell = arch.board[index];
     if (cell.itemId) {
@@ -2246,8 +2273,11 @@ function handleArchaeologyDig(index) {
 
 function processArchaeologyLevelComplete() {
     const arch = state.archaeology;
-    if (arch.isTransitioning) return;
+    if (arch.isTransitioning || arch.isFinished) return;
     arch.isTransitioning = true;
+
+    // Remember if auto was on
+    const wasAuto = arch.autoDig;
 
     // Grant Reward
     const reward = arch.rewardConfigs.find(r => r.group === arch.group && r.level === arch.level);
@@ -2255,59 +2285,54 @@ function processArchaeologyLevelComplete() {
         grantArchaeologyReward(reward.reward_type, reward.reward_spec, reward.reward_value, `考古學關卡 ${arch.level} 獎勵`);
     }
 
-    // Delay before next level (2 seconds base, affected by speed multiplier)
-    const delay = 2000 / arch.speed;
+    // Check if there is a next level in the CURRENT group
+    const nextLevelRewardExists = arch.rewardConfigs.some(r => r.group === arch.group && r.level === arch.level + 1);
 
-    setTimeout(() => {
-        // Move to next level
-        arch.level++;
-
-        // Check if group is finished
-        const nextLevelReward = arch.rewardConfigs.find(r => r.group === arch.group && r.level === arch.level);
-        if (!nextLevelReward) {
-            const nextGroupReward = arch.rewardConfigs.find(r => r.group === arch.group + 1);
-            if (nextGroupReward) {
-                arch.group++;
-            } else {
-                arch.level = 1;
-                arch.group = 1;
+    if (nextLevelRewardExists) {
+        const delay = 2000 / arch.speed;
+        setTimeout(() => {
+            arch.level++;
+            initArchaeologyStage();
+            arch.isTransitioning = false;
+            sendUpdate();
+            // Resume Auto if it was on
+            if (wasAuto) {
+                arch.autoDig = true;
+                runArchaeologyAuto();
             }
-        }
-
-        initArchaeologyStage();
+        }, delay);
+    } else {
+        // No more levels in this group - Hard Stop
+        arch.isFinished = true;
         arch.isTransitioning = false;
-        sendUpdate();
-
-        // Resume auto if enabled
-        if (arch.autoDig) runArchaeologyAuto();
-    }, delay);
+        arch.autoDig = false;
+    }
 
     sendUpdate();
 }
 
 function runArchaeologyAuto() {
-    if (!state.archaeology.autoDig || state.archaeology.isTransitioning) return;
-    if (state.archaeology.tokens <= 0) {
-        state.archaeology.autoDig = false;
+    const arch = state.archaeology;
+    if (!arch.autoDig || arch.isTransitioning || arch.isFinished) return;
+    if (arch.tokens <= 0) {
+        arch.autoDig = false;
         sendUpdate();
         return;
     }
 
-    const arch = state.archaeology;
-
-    // 1. Priority: Find hit cells of items that are NOT fully found yet
-    // and dig their UNREVEALED cells
+    const [rows, cols] = arch.currentStageConfig.stage_area.split('_').map(Number);
     let targetIndex = -1;
 
-    // Find all items that are partially revealed but not found
-    const partialItems = arch.targetItems.filter(item => {
-        if (item.isFound) return false;
-        // Check if at least one cell is revealed
-        return item.cells.some(idx => arch.board[idx].isRevealed);
-    });
-
+    // 1. Priority: Find hit cells of items that are NOT fully found yet (Focus mode)
+    const partialItems = arch.targetItems.filter(item => !item.isFound && item.cells.some(idx => arch.board[idx].isRevealed));
     if (partialItems.length > 0) {
-        // Pick one partial item and find its first unrevealed cell
+        // Pick the item with most revealed cells first to finish it quickly
+        partialItems.sort((a, b) => {
+            const revA = a.cells.filter(idx => arch.board[idx].isRevealed).length;
+            const revB = b.cells.filter(idx => arch.board[idx].isRevealed).length;
+            return revB - revA;
+        });
+
         for (const item of partialItems) {
             const unrevealedIdx = item.cells.find(idx => !arch.board[idx].isRevealed);
             if (unrevealedIdx !== undefined) {
@@ -2317,40 +2342,106 @@ function runArchaeologyAuto() {
         }
     }
 
-    // 2. Fallback: Random unrevealed cell
+    // 2. Fallback: Heatmap-based search (Search mode)
     if (targetIndex === -1) {
-        const unrevealedIndices = [];
-        arch.board.forEach((cell, idx) => {
-            if (!cell.isRevealed) unrevealedIndices.push(idx);
+        const remainingItems = arch.targetItems.filter(item => !item.isFound);
+        if (remainingItems.length === 0) {
+            arch.autoDig = false;
+            sendUpdate();
+            return;
+        }
+
+        const heatmap = new Float32Array(rows * cols);
+
+        // For each item to be found, check all potential valid placements
+        remainingItems.forEach(item => {
+            const [w_base, h_base] = item.id.replace('cell_', '').split('_').map(Number);
+            const sizes = (w_base === h_base) ? [{ w: w_base, h: h_base }] : [{ w: w_base, h: h_base }, { w: h_base, h: w_base }];
+
+            sizes.forEach(size => {
+                const { w, h } = size;
+                for (let r = 0; r <= rows - h; r++) {
+                    for (let c = 0; c <= cols - w; c++) {
+                        // Check if item CAN be placed here (no revealed cells in the area)
+                        let possible = true;
+                        for (let ir = 0; ir < h; ir++) {
+                            for (let ic = 0; ic < w; ic++) {
+                                const idx = (r + ir) * cols + (c + ic);
+                                if (arch.board[idx].isRevealed) {
+                                    possible = false;
+                                    break;
+                                }
+                            }
+                            if (!possible) break;
+                        }
+
+                        if (possible) {
+                            // If possible, increase weight of all covered cells
+                            // We give a slight boost to centers of this placement
+                            for (let ir = 0; ir < h; ir++) {
+                                for (let ic = 0; ic < w; ic++) {
+                                    const idx = (r + ir) * cols + (c + ic);
+                                    // Base score: 1 count per placement
+                                    // Modifier for "center-ness" within the placement itself
+                                    const dr = Math.abs(ir - (h - 1) / 2);
+                                    const dc = Math.abs(ic - (w - 1) / 2);
+                                    const distScore = 1.0 - (dr + dc) * 0.1;
+                                    heatmap[idx] += Math.max(0.1, distScore);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         });
-        if (unrevealedIndices.length > 0) {
-            targetIndex = unrevealedIndices[Math.floor(Math.random() * unrevealedIndices.length)];
+
+        // Pick max score
+        let maxScore = -1;
+        let candidates = [];
+        for (let i = 0; i < heatmap.length; i++) {
+            if (arch.board[i].isRevealed) continue;
+            if (heatmap[i] > maxScore + 0.0001) {
+                maxScore = heatmap[i];
+                candidates = [i];
+            } else if (Math.abs(heatmap[i] - maxScore) < 0.0001) {
+                candidates.push(i);
+            }
+        }
+
+        if (candidates.length > 0) {
+            // Pick a candidate
+            // For spreading, we could pick further from current revealed? 
+            // but heatmap naturally does it. Random is fine among ties.
+            targetIndex = candidates[Math.floor(Math.random() * candidates.length)];
         }
     }
 
     if (targetIndex !== -1) {
         handleArchaeologyDig(targetIndex);
+        // Delay before next auto move
+        if (arch.autoDig && !arch.isTransitioning) {
+            const delay = 500 / arch.speed; // Fast enough for 50x
+            setTimeout(runArchaeologyAuto, delay);
+        }
     } else {
-        state.archaeology.autoDig = false;
+        arch.autoDig = false;
         sendUpdate();
-        return;
-    }
-
-    if (state.archaeology.autoDig) {
-        const delay = (1000 / arch.speed);
-        setTimeout(runArchaeologyAuto, delay);
     }
 }
 
 function grantArchaeologyReward(type, spec, value, source) {
+    const arch = state.archaeology;
     if (type === 'DICE') {
         state.dice += value;
         state.totalEarnedDice += value;
         state.earnedDiceBreakdown[source] = (state.earnedDiceBreakdown[source] || 0) + value;
+        if (arch) arch.stats.totalEarnedDice += value;
     } else if (type === 'COIN') {
         addMoney(value, 'INCOME', source);
+        if (arch) arch.stats.totalEarnedGold += value;
     } else if (type === 'GEM') {
         state.gems += value;
+        if (arch) arch.stats.totalEarnedGem += value;
     }
 
     recordLog({

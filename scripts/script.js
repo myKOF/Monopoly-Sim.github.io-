@@ -515,7 +515,12 @@ const ui = {
     archaeologySpeed: document.getElementById('archaeology-speed'),
     btnArchaeologyReset: document.getElementById('btn-archaeology-reset'),
     statArchaeologySpent: document.getElementById('archaeology-stat-spent-tokens'),
-    statArchaeologyFound: document.getElementById('archaeology-stat-items-found'),
+    statArchaeologyDice: document.getElementById('archaeology-stat-total-dice'),
+    statArchaeologyGold: document.getElementById('archaeology-stat-total-gold'),
+    statArchaeologyGem: document.getElementById('archaeology-stat-total-gem'),
+    statArchaeologyEmpty: document.getElementById('archaeology-stat-empty-digs'),
+    statArchaeologyRate: document.getElementById('archaeology-stat-success-rate'),
+    archaeologyFinishOverlay: document.getElementById('archaeology-finish-overlay'),
 };
 
 const FALLBACK_DATA = [
@@ -4057,15 +4062,45 @@ function renderArchaeology() {
     const arch = state.archaeology;
     if (!arch) return;
 
-    // Update level display
-    if (ui.archaeologyLevelDisp) ui.archaeologyLevelDisp.textContent = `${arch.level}`;
+    if (ui.archaeologyLevel) ui.archaeologyLevel.textContent = arch.level;
+
+    // Highlight active group button
+    document.querySelectorAll('.group-btn').forEach(btn => {
+        const gid = parseInt(btn.id.replace('arch-group-', ''));
+        if (gid === arch.group) {
+            btn.classList.add('bg-amber-600', 'border-amber-400');
+            btn.classList.remove('bg-stone-800', 'border-white/5');
+        } else {
+            btn.classList.remove('bg-amber-600', 'border-amber-400');
+            btn.classList.add('bg-stone-800', 'border-white/5');
+        }
+    });
 
     // Update tokens
     if (ui.archaeologyTokens) ui.archaeologyTokens.value = arch.tokens;
 
     // Update stats
-    if (ui.statArchaeologySpent) ui.statArchaeologySpent.textContent = arch.stats.totalTokensUsed;
-    if (ui.statArchaeologyFound) ui.statArchaeologyFound.textContent = arch.foundItemsCount;
+    if (ui.statArchaeologySpent) ui.statArchaeologySpent.textContent = (arch.stats.totalTokensUsed || 0).toLocaleString();
+    if (ui.statArchaeologyDice) ui.statArchaeologyDice.textContent = (arch.stats.totalEarnedDice || 0).toLocaleString();
+    if (ui.statArchaeologyGold) ui.statArchaeologyGold.textContent = (arch.stats.totalEarnedGold || 0).toLocaleString();
+    if (ui.statArchaeologyGem) ui.statArchaeologyGem.textContent = (arch.stats.totalEarnedGem || 0).toLocaleString();
+    if (ui.statArchaeologyEmpty) ui.statArchaeologyEmpty.textContent = (arch.stats.totalEmptyDigs || 0).toLocaleString();
+
+    if (ui.statArchaeologyRate) {
+        const spent = arch.stats.totalTokensUsed || 0;
+        const empty = arch.stats.totalEmptyDigs || 0;
+        const rate = spent > 0 ? ((1 - empty / spent) * 100).toFixed(1) : "0.0";
+        ui.statArchaeologyRate.textContent = `${rate}%`;
+    }
+
+    // Toggle Finish Overlay
+    if (ui.archaeologyFinishOverlay) {
+        if (arch.isFinished) {
+            ui.archaeologyFinishOverlay.classList.remove('hidden');
+        } else {
+            ui.archaeologyFinishOverlay.classList.add('hidden');
+        }
+    }
 
     // Render Progress Bar & Rewards
     renderArchaeologyRewards();
@@ -4129,15 +4164,15 @@ function renderArchaeologyRewards() {
 // Helper for archaeology item icons
 function getArchaeologyItemIcon(id) {
     const mapping = {
-        'cell_1_1': '🏺', // Pottery
-        'cell_2_1': '🦴', // Bone
-        'cell_3_1': '🗡️', // Sword
-        'cell_4_1': '📜', // Scroll
-        'cell_2_2': '🧱', // Tablet
+        'cell_1_1': './assets/archaeology/coin.png',       // Coin (1:1)
+        'cell_2_1': './assets/archaeology/bone.png',       // Bone (2:1)
+        'cell_3_1': './assets/archaeology/sword.png',      // Sword (3:1)
+        'cell_4_1': './assets/archaeology/sword_long.png', // Long Sword (4:1)
+        'cell_2_2': '🧱', // Tablet (Keep emoji or simple icon if no better asset)
         'cell_3_2': '🥣', // Bowl
-        'cell_4_2': '👑', // Crown
-        'cell_3_3': '🗿', // Statue
-        'cell_4_3': '🦖'  // Fossil
+        'cell_4_2': './assets/archaeology/crown.png',      // Crown (4:2)
+        'cell_3_3': './assets/archaeology/statue.png',     // Statue (3x3)
+        'cell_4_3': './assets/archaeology/fossil.png'      // Fossil (4:3)
     };
     return mapping[id] || '🏺';
 }
@@ -4165,12 +4200,21 @@ function renderArchaeologyTargets() {
 
         // Icon and Name
         const icon = getArchaeologyItemIcon(item.id);
+        const isImage = icon.includes('.png');
         const headerDiv = document.createElement('div');
         headerDiv.className = 'flex items-center gap-1.5 mb-1';
-        headerDiv.innerHTML = `
-            <span class="text-base ${item.isFound ? '' : 'filter grayscale blur-[0.5px]'}">${icon}</span>
-            <span class="text-[8px] font-black text-gray-300 uppercase tracking-tight">${item.id.replace('cell_', '')}</span>
-        `;
+
+        if (isImage) {
+            headerDiv.innerHTML = `
+                <img src="${icon}" class="w-5 h-4 object-contain ${item.isFound ? '' : 'filter grayscale transition-all'}" />
+                <span class="text-[8px] font-black text-gray-300 uppercase tracking-tight">${item.id.replace('cell_', '')}</span>
+            `;
+        } else {
+            headerDiv.innerHTML = `
+                <span class="text-base ${item.isFound ? '' : 'filter grayscale blur-[0.5px]'}">${icon}</span>
+                <span class="text-[8px] font-black text-gray-300 uppercase tracking-tight">${item.id.replace('cell_', '')}</span>
+            `;
+        }
         div.appendChild(headerDiv);
 
         // Render a mini preview of the shape
@@ -4186,13 +4230,6 @@ function renderArchaeologyTargets() {
         }
 
         div.appendChild(shapeDiv);
-        if (item.isFound) {
-            const foundDiv = document.createElement('div');
-            foundDiv.className = 'text-[5px] font-black text-amber-500 uppercase mt-0.5';
-            foundDiv.textContent = 'DONE';
-            div.appendChild(foundDiv);
-        }
-
         container.appendChild(div);
     });
 }
@@ -4210,7 +4247,7 @@ function renderArchaeologyGrid() {
     container.innerHTML = '';
 
     const board = arch.board || [];
-    const baseCellSize = (window.innerWidth < 640) ? 20 : 25;
+    const baseCellSize = (window.innerWidth < 640) ? 20 : 28;
 
     board.forEach((cellData, index) => {
         const btn = document.createElement('button');
@@ -4224,6 +4261,7 @@ function renderArchaeologyGrid() {
                 const item = arch.targetItems.find(it => it.id === cellData.itemId && it.instanceId === cellData.instanceId);
                 const isItemFound = item && item.isFound;
                 const icon = getArchaeologyItemIcon(cellData.itemId);
+                const isImage = icon.includes('.png');
 
                 btn.className += isItemFound
                     ? ` bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(242,158,11,0.2)] z-10`
@@ -4244,27 +4282,58 @@ function renderArchaeologyGrid() {
                 const localY = r - minRow;
 
                 const wrapper = document.createElement('div');
-                wrapper.className = 'absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none';
+                wrapper.className = 'absolute inset-0 flex items-center justify-center pointer-events-none';
 
-                const span = document.createElement('span');
-                span.textContent = icon;
-                span.className = 'absolute flex items-center justify-center pointer-events-none';
+                const isVertical = itemH > itemW;
+                let element;
+                if (isImage) {
+                    element = document.createElement('div');
+                    element.className = 'absolute inset-0 pointer-events-none';
+                    element.style.backgroundImage = `url(${icon})`;
+                    element.style.backgroundRepeat = 'no-repeat';
 
-                // Base size for one tile
-                span.style.fontSize = `${baseCellSize * 0.8}px`;
-                span.style.left = '50%';
-                span.style.top = '50%';
+                    // Increased zoom factor to 1.3 to forcefully crop empty edges and fill tiles
+                    const imageZoom = 1.3;
 
-                // Offset relative to item center
-                const offsetX = ((itemW - 1) / 2 - localX) * 100;
-                const offsetY = ((itemH - 1) / 2 - localY) * 100;
+                    // Function to calculate background position percentage to center the zoomed content
+                    const getPos = (idx, total, zoom) => {
+                        const totalSize = total * zoom * 100;
+                        if (totalSize <= 100) return 50;
+                        const surplus = (zoom - 1) * total * 100 / 2;
+                        return (surplus + idx * 100) / (totalSize - 100) * 100;
+                    };
 
-                // STRETCH: scale according to item bounds
-                span.style.transform = `translate(calc(-50% + ${offsetX}%), calc(-50% + ${offsetY}%)) scale(${itemW}, ${itemH})`;
+                    if (isVertical) {
+                        element.style.backgroundSize = `${itemH * 100 * imageZoom}% ${itemW * 100 * imageZoom}%`;
+                        const posX = getPos(localY, itemH, imageZoom);
+                        // Vertical rotation maps image Y to object X. Note the mirroring fix.
+                        const posY_raw = getPos(localX, itemW, imageZoom);
+                        const posY = 100 - posY_raw;
+                        element.style.backgroundPosition = `${posX}% ${posY}%`;
+                        element.style.transform = 'rotate(90deg) scale(1.05)';
+                    } else {
+                        element.style.backgroundSize = `${itemW * 100 * imageZoom}% ${itemH * 100 * imageZoom}%`;
+                        const posX = getPos(localX, itemW, imageZoom);
+                        const posY = getPos(localY, itemH, imageZoom);
+                        element.style.backgroundPosition = `${posX}% ${posY}%`;
+                        element.style.transform = 'scale(1.05)';
+                    }
+                } else {
+                    element = document.createElement('span');
+                    element.textContent = icon;
+                    element.className = 'absolute flex items-center justify-center pointer-events-none';
+                    element.style.fontSize = `${baseCellSize * 1.1}px`;
+                    element.style.left = '50%';
+                    element.style.top = '50%';
+                    const offsetX = ((itemW - 1) / 2 - localX) * 100;
+                    const offsetY = ((itemH - 1) / 2 - localY) * 100;
+                    const fudge = 1.1;
+                    element.style.transform = `translate(calc(-50% + ${offsetX}%), calc(-50% + ${offsetY}%)) scale(${itemW * fudge}, ${itemH * fudge})`;
+                }
 
-                if (!isItemFound) span.className += ' opacity-50 grayscale-[0.6]';
+                if (!isItemFound) element.className += ' opacity-50 grayscale-[0.6]';
 
-                wrapper.appendChild(span);
+                wrapper.appendChild(element);
                 btn.appendChild(wrapper);
             } else {
                 btn.className += ` bg-stone-950/40 border-stone-900/50 text-stone-800`;
@@ -4352,6 +4421,16 @@ if (ui.archaeologyTokens) {
         const val = parseInt(ui.archaeologyTokens.value) || 0;
         worker.postMessage({ type: 'UPDATE_CONFIG', payload: { archaeologyTokens: val } });
     });
+}
+
+function switchArchaeologyGroup(group) {
+    worker.postMessage({ type: 'ARCHAEOLOGY_SWITCH_GROUP', payload: { group } });
+}
+
+function closeArchaeologyModal() {
+    if (ui.modalArchaeology) {
+        ui.btnCloseArchaeology.click();
+    }
 }
 
 
