@@ -15,6 +15,8 @@ let state = {
     tileVisits: new Array(BOARD_SIZE).fill(0),
     isRunning: false,
     autoRollTimer: null,
+    archAutoTimer: null,
+    archTransitionTimer: null, // [NEW] Dedicated timer for level change
     rollCount: 0,
     targetRollCount: 0,
     mode: 'IDLE', // IDLE, AUTO_PLAY, FAST_SIM
@@ -71,7 +73,7 @@ let state = {
     archaeology: {
         level: 1,
         group: 1,
-        tokens: 100,
+        tokens: 1000,
         board: [],
         targetItems: [],
         foundItemsCount: 0,
@@ -520,20 +522,40 @@ self.onmessage = function (e) {
             break;
         case 'ARCHAEOLOGY_SET_AUTO':
             state.archaeology.autoDig = payload.enabled;
-            if (state.archaeology.autoDig) runArchaeologyAuto();
+            if (state.archaeology.autoDig) {
+                runArchaeologyAuto();
+            } else {
+                if (state.archAutoTimer) {
+                    clearTimeout(state.archAutoTimer);
+                    state.archAutoTimer = null;
+                }
+            }
             sendUpdate();
             break;
         case 'ARCHAEOLOGY_SET_SPEED':
             state.archaeology.speed = payload.speed;
             sendUpdate();
             break;
+        case 'ARCHAEOLOGY_RESTART':
+            // Soft reset for auto-replay or completion button
+            state.archaeology.level = 1;
+            state.archaeology.foundItemsCount = 0;
+            state.archaeology.isFinished = false;
+            state.archaeology.tokens = 1000;
+            initArchaeologyStage();
+            sendUpdate();
+            // Automatically continue if autoDig was on
+            if (state.archaeology.autoDig) {
+                runArchaeologyAuto();
+            }
+            break;
         case 'ARCHAEOLOGY_RESET':
+            // Full manual reset
             state.archaeology.level = 1;
             state.archaeology.group = 1;
             state.archaeology.foundItemsCount = 0;
             state.archaeology.isFinished = false;
-            state.archaeology.autoDig = false; // Stop auto-dig on reset
-            // Reset all stats including earned resources
+            state.archaeology.autoDig = false; // Stop auto-dig on full reset
             state.archaeology.stats = {
                 totalTokensUsed: 0,
                 totalEarnedDice: 0,
@@ -541,6 +563,7 @@ self.onmessage = function (e) {
                 totalEarnedGem: 0,
                 totalEmptyDigs: 0
             };
+            state.archaeology.tokens = 1000;
             initArchaeologyStage();
             sendUpdate();
             break;
@@ -1316,7 +1339,9 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             speed: state.archaeology.speed,
             currentStageConfig: state.archaeology.currentStageConfig,
             stats: state.archaeology.stats,
-            rewardConfigs: state.archaeology.rewardConfigs
+            rewardConfigs: state.archaeology.rewardConfigs,
+            isFinished: state.archaeology.isFinished,
+            isTransitioning: state.archaeology.isTransitioning
         },
         magicPlant: {
             level: state.magicPlant.level,
@@ -2362,14 +2387,15 @@ function processArchaeologyLevelComplete() {
 
     if (nextLevelRewardExists) {
         const delay = 2000 / arch.speed;
-        setTimeout(() => {
+        if (state.archTransitionTimer) clearTimeout(state.archTransitionTimer);
+        state.archTransitionTimer = setTimeout(() => {
             arch.level++;
             initArchaeologyStage();
             arch.isTransitioning = false;
+            state.archTransitionTimer = null;
             sendUpdate();
-            // Resume Auto if it was on
-            if (wasAuto) {
-                arch.autoDig = true;
+            // Point: Only resume if autoDig is STILL true at this moment
+            if (arch.autoDig) {
                 runArchaeologyAuto();
             }
         }, delay);
@@ -2377,7 +2403,8 @@ function processArchaeologyLevelComplete() {
         // No more levels in this group - Hard Stop
         arch.isFinished = true;
         arch.isTransitioning = false;
-        arch.autoDig = false;
+        // DO NOT reset autoDig here, let the UI decide if it wants to restart
+        self.postMessage({ type: 'ARCHAEOLOGY_COMPLETE' });
     }
 
     sendUpdate();
@@ -2385,6 +2412,12 @@ function processArchaeologyLevelComplete() {
 
 function runArchaeologyAuto() {
     const arch = state.archaeology;
+
+    if (state.archAutoTimer) {
+        clearTimeout(state.archAutoTimer);
+        state.archAutoTimer = null;
+    }
+
     if (!arch.autoDig || arch.isTransitioning || arch.isFinished) return;
     if (arch.tokens <= 0) {
         arch.autoDig = false;
@@ -2493,7 +2526,7 @@ function runArchaeologyAuto() {
         // Delay before next auto move
         if (arch.autoDig && !arch.isTransitioning) {
             const delay = 500 / arch.speed; // Fast enough for 50x
-            setTimeout(runArchaeologyAuto, delay);
+            state.archAutoTimer = setTimeout(runArchaeologyAuto, delay);
         }
     } else {
         arch.autoDig = false;

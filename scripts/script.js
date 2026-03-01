@@ -548,6 +548,7 @@ const ui = {
     statArchaeologyEmpty: document.getElementById('archaeology-stat-empty-digs'),
     statArchaeologyRate: document.getElementById('archaeology-stat-success-rate'),
     archaeologyFinishOverlay: document.getElementById('archaeology-finish-overlay'),
+    archaeologyRepeatInput: document.getElementById('archaeology-repeat-count'),
 
     // [NEW] Magic Plant DOM Elements
     btnMagicPlantOpen: document.getElementById('btn-magic-plant-open'),
@@ -687,6 +688,19 @@ function workerMessageHandler(e) {
             console.log(`[Traveler] Auto Replaying. Remaining: ${repeatCount - 1}`);
         } else {
             showTravelerCompleteDialog();
+        }
+    }
+
+    if (type === 'ARCHAEOLOGY_COMPLETE') {
+        const repeatInput = ui.archaeologyRepeatInput;
+        const repeatCount = repeatInput ? parseInt(repeatInput.value) : 1;
+        const isAuto = state.archaeology && state.archaeology.autoDig;
+
+        if (isAuto && repeatCount > 1) {
+            // Auto Replay ONLY when AUTO is on
+            if (repeatInput) repeatInput.value = repeatCount - 1;
+            worker.postMessage({ type: 'ARCHAEOLOGY_RESTART' });
+            console.log(`[Archaeology] Auto Replaying. Remaining: ${repeatCount - 1}`);
         }
     }
 
@@ -4346,7 +4360,7 @@ function renderArchaeologyRewards() {
             <div class="w-8 h-8 rounded-lg bg-stone-800 border border-white/10 flex items-center justify-center text-sm ${r.level < arch.level ? 'border-amber-500/50 grayscale' : (r.level === arch.level ? 'border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]' : '')}">
                 ${icon}
             </div>
-            ${r.level < arch.level ? '<div class="absolute -top-1 -right-1 text-[10px] bg-green-500 rounded-full w-4 h-4 flex items-center justify-center border border-white/20">✓</div>' : ''}
+            ${(r.level < arch.level || (r.level === arch.level && arch.isFinished)) ? '<div class="absolute -top-1 -right-1 text-[10px] bg-green-500 rounded-full w-4 h-4 flex items-center justify-center border border-white/20">✓</div>' : ''}
             
             <!-- Tooltip -->
             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-2.5 py-1.5 bg-stone-800 border border-white/20 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-[120] shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center gap-2 transform translate-y-2 group-hover:translate-y-0">
@@ -4473,8 +4487,8 @@ function renderArchaeologyGrid() {
                 const isImage = icon.includes('.png');
 
                 btn.className += isItemFound
-                    ? ` bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(242,158,11,0.2)] z-10`
-                    : ` bg-stone-800 border-stone-700`;
+                    ? ` bg-stone-900 border-amber-400 shadow-[0_0_8px_rgba(242,158,11,0.3)] z-10`
+                    : ` bg-stone-900 border-stone-700`;
 
                 // Calculate layout details for stretching
                 const r = Math.floor(index / cols);
@@ -4591,6 +4605,13 @@ if (ui.btnArchaeologyOpen) {
 if (ui.btnCloseArchaeology) {
     ui.btnCloseArchaeology.addEventListener('click', () => {
         if (ui.modalArchaeology) {
+            // POINT 2 & 3: Stop action and update UI state immediately
+            if (state.archaeology && state.archaeology.autoDig) {
+                state.archaeology.autoDig = false; // Optimistic local update
+                renderArchaeology();
+                worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
+            }
+
             ui.modalArchaeology.classList.remove('opacity-100');
             const content = ui.modalArchaeology.querySelector('.archaeology-modal-content');
             if (content) {
@@ -4607,7 +4628,11 @@ if (ui.btnCloseArchaeology) {
 
 if (ui.btnArchaeologyAuto) {
     ui.btnArchaeologyAuto.addEventListener('click', () => {
-        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: !state.archaeology.autoDig } });
+        const nextState = !state.archaeology.autoDig;
+        // Instant feedback Point 3
+        state.archaeology.autoDig = nextState;
+        renderArchaeology();
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: nextState } });
     });
 }
 
@@ -4623,6 +4648,10 @@ if (ui.btnArchaeologyReset) {
             worker.postMessage({ type: 'ARCHAEOLOGY_RESET' });
         }
     });
+}
+
+function resetArchaeologyFromOverlay() {
+    worker.postMessage({ type: 'ARCHAEOLOGY_RESTART' });
 }
 
 if (ui.archaeologyTokens) {
