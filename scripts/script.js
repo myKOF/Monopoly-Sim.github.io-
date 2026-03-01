@@ -3964,32 +3964,40 @@ function updateScratchUI() {
     }
 
     if (ui.scratchTargets && sc.currentCard) {
+        const scratchSymbols = ['☀️', '🌙', '⭐'];
         ui.scratchTargets.innerHTML = sc.currentCard.targets.slice(0, 3).map((t, idx) => `
-            <div class="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
-                <div class="text-2xl">${getRewardIcon(t)}</div>
+            <div class="flex items-center gap-4 bg-white/5 px-4 py-2.5 rounded-xl border border-white/10 shadow-lg group hover:bg-white/10 transition-all">
+                <div class="flex flex-col items-center gap-1">
+                    <div class="text-2xl">${scratchSymbols[idx]}</div>
+                    <div class="w-4 h-px bg-white/20"></div>
+                    <div class="text-xl">${getRewardIcon(t)}</div>
+                </div>
                 <div>
-                    <div class="text-[9px] text-gray-400 uppercase tracking-widest">${t.desc || t.reward_type || '獎勵'}</div>
-                    <div class="text-[11px] font-bold text-white">${t.reward_value}</div>
-                    ${parseInt(t.integral) > 0 ? `<div class="text-[9px] text-neon-blue">+${t.integral} 積分</div>` : ''}
+                    <div class="text-[10px] text-gray-400 uppercase tracking-widest font-black">${t.desc || t.reward_type || '獎勵'}</div>
+                    <div class="text-sm font-black text-white">${Number(t.reward_value).toLocaleString()}</div>
+                    ${parseInt(t.integral) > 0 ? `<div class="text-[9px] text-neon-blue font-black">+${t.integral} 積分</div>` : ''}
                 </div>
             </div>
         `).join('');
     }
 
     if (ui.gridScratch && sc.currentCard) {
+        const scratchSymbols = ['☀️', '🌙', '⭐'];
         ui.gridScratch.innerHTML = sc.currentCard.grid.map((iconIdx, i) => {
             const isRevealed = sc.currentCard.revealed.includes(i);
             const target = sc.currentCard.targets[iconIdx];
             const isMatched = sc.currentCard.isCompleted && sc.currentCard.matchedIdx === iconIdx && isRevealed;
-            const icon = getRewardIcon(target);
+
+            // Map index to symbols, using modulo to handle any out-of-bounds indices from decoys
+            const symbol = scratchSymbols[iconIdx % 3];
 
             return `
-                <div onclick="clickScratchCard(${i})" class="scratch-card-item aspect-square rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center relative overflow-hidden group
+                <div onclick="clickScratchCard(${i})" class="scratch-card-item aspect-square rounded-2xl border-[3px] cursor-pointer transition-all duration-300 flex items-center justify-center relative overflow-hidden group
                     ${isRevealed ? 'bg-white/10 border-white/20' : 'bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border-yellow-500/30 hover:border-yellow-400'}
                     ${isMatched ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-transparent border-yellow-400 bg-yellow-400/20 animate-pulse' : ''}">
-                    ${isRevealed ? `<span class="text-2xl animate-bounce-short">${icon}</span>` : `
+                    ${isRevealed ? `<span class="text-5xl animate-bounce-short">${symbol}</span>` : `
                         <div class="absolute inset-0 flex items-center justify-center">
-                            <span class="text-yellow-500/40 text-[10px] font-black uppercase tracking-widest group-hover:scale-110 transition-transform">Scratch</span>
+                            <span class="text-yellow-500/40 text-xs font-black uppercase tracking-[0.2em] group-hover:scale-125 transition-transform">Scratch</span>
                         </div>
                     `}
                 </div>
@@ -4018,28 +4026,28 @@ function updateScratchUI() {
 
             const rewards = [];
             if (gold > 0) rewards.push(`
-                <div class="flex items-center gap-1">
-                    <span class="text-[10px]">💰</span>
-                    <span class="font-bold text-yellow-500/90 text-[10px]">${gold.toLocaleString()}</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-sm">💰</span>
+                    <span class="font-bold text-yellow-500 text-xs">${gold.toLocaleString()}</span>
                 </div>
             `);
             if (gem > 0) rewards.push(`
-                <div class="flex items-center gap-1">
-                    <span class="text-[10px]">💎</span>
-                    <span class="font-bold text-emerald-400/90 text-[10px]">${gem}</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-sm">💎</span>
+                    <span class="font-bold text-emerald-400 text-xs">${gem}</span>
                 </div>
             `);
             if (dice > 0) rewards.push(`
-                <div class="flex items-center gap-1">
-                    <span class="text-[10px]">🎲</span>
-                    <span class="font-bold text-blue-400/90 text-[10px]">${dice}</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-sm">🎲</span>
+                    <span class="font-bold text-blue-400 text-xs">${dice}</span>
                 </div>
             `);
 
             // Styling based on status
-            let rowClass = "p-2.5 rounded-xl border transition-all mb-1.5 flex flex-col gap-2 ";
+            let rowClass = "p-3.5 rounded-xl border transition-all mb-2 flex flex-col gap-3 ";
             let statusText = "";
-            let statusClass = "text-[10px] font-bold ";
+            let statusClass = "text-xs font-black ";
 
             if (isCompleted) {
                 rowClass += "bg-white/[0.02] border-white/5 opacity-40";
@@ -4058,11 +4066,11 @@ function updateScratchUI() {
             return `
                 <div class="${rowClass}">
                     <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[11px] font-black text-white px-1.5 py-0.5 rounded bg-white/5 border border-white/10 italic">LV.${level}</span>
-                            <span class="text-[10px] text-gray-400 font-medium">升級獎勵</span>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-black text-white px-2 py-1 rounded bg-white/10 border border-white/20 italic">LV.${level}</span>
+                            <span class="text-xs text-gray-400 font-bold uppercase tracking-wider">升級獎勵</span>
                         </div>
-                        <div class="${statusClass}">${statusText}</div>
+                        <div class="${statusClass} font-mono">${statusText}</div>
                     </div>
                     <div class="flex flex-wrap gap-3 mt-0.5">
                         ${rewards.join('')}

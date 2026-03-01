@@ -1610,7 +1610,7 @@
     <!-- Scratch Card Modal -->
     <div id="scratch-card-modal"
         class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md hidden opacity-0 transition-opacity duration-300">
-        <div class="premium-modal-border w-[920px] h-[560px] scale-90 transition-all duration-300"
+        <div class="premium-modal-border w-[1100px] h-[660px] scale-90 transition-all duration-300"
             id="scratch-modal-container">
             <div class="premium-modal-content">
                 <!-- Close Button (Top Right) -->
@@ -1634,30 +1634,30 @@
                             </path>
                         </svg>
                     </button>
-                    <div class="flex mb-2 h-[80px] shrink-0 overflow-hidden">
+                    <div class="flex mb-2 h-[110px] shrink-0 overflow-hidden">
                         <div
-                            class="bg-[#1e293b] border border-white/10 rounded-xl p-3 flex gap-3 items-center h-full overflow-hidden flex-1 shadow-inner">
+                            class="bg-[#1e293b] border border-white/10 rounded-xl p-4 flex gap-4 items-center h-full overflow-hidden flex-1 shadow-inner">
                             <div id="scratch-targets-container"
-                                class="flex gap-4 items-center h-full overflow-x-auto overflow-y-hidden">
+                                class="flex gap-5 items-center h-full overflow-x-auto overflow-y-hidden">
                                 <!-- Injected Targets -->
                             </div>
                         </div>
                     </div>
 
                     <!-- Middle: Level & Progress -->
-                    <div class="flex items-center gap-4 mb-2 bg-[#1e293b]/50 p-2.5 rounded-xl border border-white/5">
-                        <div class="text-2xl font-black text-vibe-primary italic tracking-wider">LV.<span
+                    <div class="flex items-center gap-5 mb-2 bg-[#1e293b]/50 p-4 rounded-xl border border-white/5">
+                        <div class="text-4xl font-black text-vibe-primary italic tracking-wider">LV.<span
                                 id="scratch-level">1</span></div>
                         <div class="flex-1">
                             <div class="flex justify-between items-end mb-1.5">
-                                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Experience
+                                <div class="text-xs text-gray-400 font-bold uppercase tracking-widest">Experience
                                     Progress</div>
-                                <div class="text-[10px] text-neon-blue font-bold font-mono"><span
+                                <div class="text-sm text-neon-blue font-bold font-mono"><span
                                         id="scratch-points">0</span> / <span id="scratch-target-points">1000</span>
                                 </div>
                             </div>
                             <div
-                                class="w-full h-2.5 bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                class="w-full h-4 bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/5">
                                 <div id="scratch-progress-bar"
                                     class="h-full bg-gradient-to-r from-neon-blue to-purple-500 rounded-full w-0 transition-all duration-500 relative">
                                     <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
@@ -1668,30 +1668,30 @@
 
                     <!-- Scratch Grid -->
                     <div
-                        class="flex-1 flex items-center justify-center p-2 bg-black/20 rounded-2xl border border-white/5 overflow-y-auto custom-scrollbar relative min-h-0">
-                        <div id="scratch-grid" class="grid grid-cols-4 gap-2 w-full max-w-[340px]">
+                        class="flex-1 flex items-center justify-center p-4 bg-black/20 rounded-2xl border border-white/5 overflow-y-auto custom-scrollbar relative min-h-0">
+                        <div id="scratch-grid" class="grid grid-cols-4 gap-3 w-full max-w-[420px]">
                             <!-- 12 Cards -->
                         </div>
                     </div>
 
                     <!-- Footer Controls -->
-                    <div class="flex items-center gap-3 mt-2">
+                    <div class="flex items-center gap-4 mt-2">
                         <button id="btn-scratch-auto"
-                            class="flex-1 py-2.5 bg-[#1e293b] border border-white/10 rounded-xl text-white text-xs font-bold hover:bg-[#2d3a4f] hover:border-white/20 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg">
+                            class="flex-1 py-4 bg-[#1e293b] border border-white/10 rounded-xl text-white text-sm font-bold hover:bg-[#2d3a4f] hover:border-white/20 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg">
                             <div id="scratch-auto-dot"
                                 class="w-2 h-2 rounded-full bg-gray-500 transition-all duration-300">
                             </div>
                             AUTO
                         </button>
                         <button id="btn-scratch-multiplier"
-                            class="flex-1 py-2.5 bg-vibe-primary/20 border border-vibe-primary/50 text-vibe-primary rounded-xl text-xs font-bold hover:bg-vibe-primary/30 transition-all active:scale-95 shadow-lg">
+                            class="flex-1 py-4 bg-vibe-primary/20 border border-vibe-primary/50 text-vibe-primary rounded-xl text-sm font-bold hover:bg-vibe-primary/30 transition-all active:scale-95 shadow-lg">
                             倍速: x<span id="scratch-multiplier-val">1</span>
                         </button>
-                        <div class="flex-1 py-2 bg-black/40 border border-white/10 rounded-xl text-center shadow-inner">
+                        <div class="flex-1 py-3 bg-black/40 border border-white/10 rounded-xl text-center shadow-inner">
                             <span
-                                class="text-[9px] text-gray-500 block leading-none mb-1 uppercase tracking-widest font-bold">代幣數量</span>
+                                class="text-[11px] text-gray-500 block leading-none mb-1 uppercase tracking-widest font-bold">代幣數量</span>
                             <input type="number" id="scratch-modal-tokens"
-                                class="w-full bg-transparent outline-none border-none text-center text-lg font-mono text-white font-bold"
+                                class="w-full bg-transparent outline-none border-none text-center text-2xl font-mono text-white font-bold"
                                 value="100" min="0" step="1">
                         </div>
                     </div>
@@ -1699,10 +1699,10 @@
 
                 <!-- Middle Reward List (Permanent) -->
                 <div
-                    class="w-[280px] bg-[#0f172a] p-4 flex flex-col overflow-hidden border-r border-white/5 shadow-2xl">
+                    class="w-[340px] bg-[#0f172a] p-5 flex flex-col overflow-hidden border-r border-white/5 shadow-2xl">
                     <div
-                        class="text-[11px] text-neon-blue font-black uppercase tracking-widest flex items-center gap-2 mb-4 shrink-0">
-                        <span class="text-lg">🏆</span> 升級獎勵列表
+                        class="text-sm text-neon-blue font-black uppercase tracking-widest flex items-center gap-2 mb-4 shrink-0">
+                        <span class="text-2xl">🏆</span> 升級獎勵列表
                     </div>
                     <div id="scratch-permanent-rewards"
                         class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pr-1">
@@ -1711,32 +1711,33 @@
                 </div>
 
                 <!-- Sidebar Statistics -->
-                <div class="w-48 bg-[#0f172a] p-4 flex flex-col shadow-2xl">
-                    <h3
-                        class="text-[11px] font-black text-gray-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
-                        <span class="text-base">📊</span> 統計面版
+                <div class="w-60 bg-[#0f172a] p-6 flex flex-col shadow-2xl">
+                    <h3 class="text-sm font-black text-gray-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+                        <span class="text-xl">📊</span> 統計面版
                     </h3>
-                    <div class="flex flex-col gap-3">
-                        <div class="bg-[#1e293b] p-3 rounded-xl border border-white/10 shadow-sm">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">總耗代幣</div>
-                            <div id="scratch-stat-tokens" class="text-lg font-mono text-white font-black leading-none">-
+                    <div class="flex flex-col gap-4">
+                        <div class="bg-[#1e293b] p-4 rounded-xl border border-white/10 shadow-sm">
+                            <div class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">總耗代幣</div>
+                            <div id="scratch-stat-tokens" class="text-2xl font-mono text-white font-black leading-none">
+                                -
                             </div>
                         </div>
-                        <div class="bg-[#1e293b] p-3 rounded-xl border border-white/10 shadow-sm">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">總得骰子</div>
+                        <div class="bg-[#1e293b] p-4 rounded-xl border border-white/10 shadow-sm">
+                            <div class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">總得骰子</div>
                             <div id="scratch-stat-dice"
-                                class="text-lg font-mono text-yellow-500 font-black leading-none">-
+                                class="text-2xl font-mono text-yellow-500 font-black leading-none">-
                             </div>
                         </div>
-                        <div class="bg-[#1e293b] p-3 rounded-xl border border-white/10 shadow-sm">
-                            <div class="text-[9px] text-gray-400 uppercase tracking-widest font-bold mb-1">總得寶石</div>
+                        <div class="bg-[#1e293b] p-4 rounded-xl border border-white/10 shadow-sm">
+                            <div class="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1">總得寶石</div>
                             <div id="scratch-stat-gem"
-                                class="text-lg font-mono text-emerald-500 font-black leading-none">-
+                                class="text-2xl font-mono text-emerald-500 font-black leading-none">-
                             </div>
                         </div>
-                        <div class="bg-[#1e293b] p-3 rounded-xl border border-white/10 shadow-sm">
-                            <div class="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-1">總得金幣</div>
-                            <div id="scratch-stat-gold" class="text-lg font-mono text-blue-400 font-black leading-none">
+                        <div class="bg-[#1e293b] p-4 rounded-xl border border-white/10 shadow-sm">
+                            <div class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">總得金幣</div>
+                            <div id="scratch-stat-gold"
+                                class="text-2xl font-mono text-blue-400 font-black leading-none">
                                 -
                             </div>
                         </div>

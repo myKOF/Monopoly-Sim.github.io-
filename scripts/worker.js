@@ -1948,18 +1948,11 @@ function generateScratchCard() {
         for (let j = 0; j < 2; j++) grid.push(i);
     });
 
-    // We have 4 + 4 = 8 slots filled. Need 4 more decoys.
-    let decoys = (sc.rewardConfig || []).filter(r => !targets.some(t => t.reward_type === r.reward_type && t.reward_value === r.reward_value));
-    decoys.sort(() => Math.random() - 0.5);
-
+    // We have 4 + 2 + 2 = 8 slots filled. 
+    // Fill the remaining 4 slots with the winner (preselectedWinnerIdx)
+    // to ensure ONLY the winner has 3+ copies and no decoys create "unmatchable" symbols.
     for (let j = 0; j < 4; j++) {
-        const decoy = decoys[j] || targets[preselectedWinnerIdx];
-        let idx = allCardTargets.indexOf(decoy);
-        if (idx === -1) {
-            idx = allCardTargets.length;
-            allCardTargets.push(decoy);
-        }
-        grid.push(idx);
+        grid.push(preselectedWinnerIdx);
     }
     // Shuffle
     grid.sort(() => Math.random() - 0.5);
