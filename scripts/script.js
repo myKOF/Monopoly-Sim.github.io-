@@ -520,6 +520,7 @@ const ui = {
     travelerInsufficientIcon: document.getElementById('traveler-insufficient-icon'),
     travelerFinishedMsg: document.getElementById('traveler-finished-msg'),
     travelerStatGames: document.getElementById('traveler-stat-games'),
+    travelerStatContinues: document.getElementById('traveler-stat-continues'),
     travelerPendingList: document.getElementById('traveler-pending-list'),
     travelerLostPreview: document.getElementById('traveler-lost-preview'),
     dialogTravelerComplete: document.getElementById('traveler-complete-dialog'),
@@ -2384,6 +2385,7 @@ function renderTravelerEvent() {
     if (ui.travelerStatEarnedGem) ui.travelerStatEarnedGem.textContent = te.stats.totalEarnedGem.toLocaleString();
     if (ui.travelerStatEarnedGold) ui.travelerStatEarnedGold.textContent = te.stats.totalEarnedGold.toLocaleString();
     if (ui.travelerStatGames) ui.travelerStatGames.textContent = te.stats.totalGames.toLocaleString();
+    if (ui.travelerStatContinues) ui.travelerStatContinues.textContent = (te.stats.totalContinues || 0).toLocaleString();
 
     // Render Pending Rewards Sidebar
     const pendingList = te.pendingRewards || [];

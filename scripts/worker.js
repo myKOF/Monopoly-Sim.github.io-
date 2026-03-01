@@ -68,7 +68,7 @@ let state = {
         stageConfig: [],
         rewardConfig: [],
         pendingRewards: [], // [NEW] Stored rewards to be granted at completion
-        stats: { totalGames: 1, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
+        stats: { totalGames: 1, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0, totalContinues: 0 }
     },
     archaeology: {
         level: 1,
@@ -2156,6 +2156,7 @@ function handleTravelContinue() {
         if (state.money >= cost) {
             state.money -= cost;
             te.stats.totalSpentGold += cost;
+            te.stats.totalContinues = (te.stats.totalContinues || 0) + 1;
             te.isFailed = false;
             recordLog({ turn: state.turn, position: state.position, event: "TRAVEL_CONTINUE", delta_gold: -cost, current_balance: state.money, detail: `旅行家活動：花費 ${cost} 金幣接關` });
             sendUpdate();
@@ -2166,6 +2167,7 @@ function handleTravelContinue() {
         if (state.gems >= cost) {
             state.gems -= cost;
             te.stats.totalSpentGem += cost;
+            te.stats.totalContinues = (te.stats.totalContinues || 0) + 1;
             te.isFailed = false;
             recordLog({ turn: state.turn, position: state.position, event: "TRAVEL_CONTINUE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動：花費 ${cost} 寶石接關` });
             sendUpdate();
@@ -2201,7 +2203,8 @@ function handleTravelFullReset() {
         totalSpentGem: 0,
         totalEarnedDice: 0,
         totalEarnedGem: 0,
-        totalEarnedGold: 0
+        totalEarnedGold: 0,
+        totalContinues: 0
     };
     generateTravelBoxes();
     sendUpdate();
