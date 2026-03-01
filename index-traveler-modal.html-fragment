@@ -1,0 +1,173 @@
+    <!-- Traveler Event Modal -->
+    <div id="traveler-modal"
+        class="fixed inset-0 z-[110] flex items-center justify-center bg-black/85 backdrop-blur-xl hidden opacity-0 transition-opacity duration-300">
+        <!-- Main Panel Container -->
+        <div class="relative w-[1050px] max-w-[98vw] h-[720px] max-h-[95vh] bg-slate-900 rounded-[2.5rem] border-[3px] border-emerald-500/40 shadow-[0_0_80px_rgba(16,185,129,0.3)] overflow-hidden flex flex-col">
+            
+            <!-- Header -->
+            <div class="h-20 flex items-center justify-between px-8 bg-black/50 border-b border-white/10 shrink-0 z-10">
+                <div class="flex items-center gap-5">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-2xl shadow-lg transform rotate-3">🧭</div>
+                    <div>
+                        <h2 class="text-2xl font-black text-white tracking-tighter uppercase italic">旅行家活動 <span class="text-emerald-400 not-italic ml-2 text-lg opacity-90">TRAVELER QUEST</span></h2>
+                        <div class="flex gap-4 mt-1">
+                            <div class="text-[10px] flex items-center gap-2 bg-black/40 px-3 py-0.5 rounded-full border border-white/5">
+                                <span class="text-gray-400 font-black uppercase">Coins:</span>
+                                <span id="traveler-header-gold" class="text-emerald-400 font-mono font-black">0</span>
+                            </div>
+                            <div class="text-[10px] flex items-center gap-2 bg-black/40 px-3 py-0.5 rounded-full border border-white/5">
+                                <span class="text-gray-400 font-black uppercase">Gems:</span>
+                                <span id="traveler-header-gem" class="text-purple-400 font-mono font-black">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button id="btn-traveler-close" class="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center transition-all group active:scale-95">
+                    <span class="text-gray-400 group-hover:text-white text-2xl">✕</span>
+                </button>
+            </div>
+
+            <!-- Content Area: 3 Columns -->
+            <div class="flex-1 flex overflow-hidden min-h-0 bg-[#0b1222]">
+                
+                <!-- 1. Left Sidebar: Pending Rewards -->
+                <div id="traveler-pending-container" class="w-48 bg-black/20 border-r border-white/5 flex flex-col p-4 shrink-0">
+                    <div class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 px-1 flex items-center justify-between">
+                        <span>暫存獎勵</span>
+                        <span class="text-[8px] opacity-30 italic">PENDING</span>
+                    </div>
+                    <div id="traveler-pending-list" class="flex flex-col gap-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                        <!-- Rewards Injected here -->
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-white/5">
+                        <div class="text-[8px] text-gray-500 text-center uppercase tracking-tighter font-bold">全部通關一次性獲得</div>
+                    </div>
+                </div>
+
+                <!-- 2. Middle Column: Main Game Area -->
+                <div class="flex-1 flex flex-col p-6 overflow-hidden relative border-r border-white/5">
+                    <!-- Top: Progress -->
+                    <div class="mb-4 shrink-0">
+                        <div class="flex justify-between items-center mb-2 px-2">
+                            <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Adventure Progress</span>
+                            <span id="traveler-level-disp" class="text-xl font-black text-emerald-400 italic">STAGE 1</span>
+                        </div>
+                        <div class="relative px-2">
+                            <div id="traveler-milestones" class="flex justify-between items-end mb-2 h-12"></div>
+                            <div class="relative h-2.5 w-full bg-black/40 rounded-full border border-white/5 overflow-hidden">
+                                <div id="traveler-progress-bar" class="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-600 to-teal-400 transition-all duration-700 shadow-[0_0_15px_rgba(16,185,129,0.5)]" style="width: 0%"></div>
+                            </div>
+                            <div id="traveler-levels" class="flex justify-between mt-2 px-1 text-[9px] font-bold text-gray-600"></div>
+                        </div>
+                    </div>
+
+                    <!-- Center: Boxes Section -->
+                    <div class="flex-1 flex flex-col items-center justify-center relative min-h-0">
+                        <div id="traveler-box-grid" class="grid grid-cols-2 gap-6 w-[340px] max-w-full">
+                            <!-- Boxes Injected here -->
+                        </div>
+
+                        <!-- All Clear Msg -->
+                        <div id="traveler-finished-msg" class="absolute inset-0 flex flex-col items-center justify-center gap-4 hidden animate-in fade-in zoom-in">
+                            <div class="text-8xl animate-bounce">🏆</div>
+                            <h2 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-600 italic">全部通關</h2>
+                        </div>
+
+                        <!-- Failure Overlay -->
+                        <div id="traveler-fail-overlay" class="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-500 z-50 rounded-3xl">
+                            <div class="text-7xl mb-6 animate-bounce">🤡</div>
+                            <h3 class="text-3xl font-black text-white italic mb-2">冒險中斷！</h3>
+                            <p class="text-red-400 font-bold mb-6 text-center px-10">若選擇放棄，將失去以下所有獎勵：</p>
+                            <div id="traveler-lost-preview" class="flex flex-wrap justify-center gap-3 mb-10 max-h-[120px] overflow-y-auto px-6 w-full py-3 bg-black/40 rounded-2xl border border-white/5"></div>
+                            <div class="flex gap-4">
+                                <button id="btn-traveler-continue" class="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-lg flex items-center gap-3 transition-all active:scale-95">
+                                    <span>繼續挑戰</span>
+                                    <span id="traveler-continue-cost" class="bg-black/20 px-2 py-0.5 rounded text-sm font-mono">$5,000</span>
+                                </button>
+                                <button id="btn-traveler-giveup" class="px-8 py-3 bg-red-600/20 hover:bg-red-600/40 border border-red-600/30 text-red-200 font-black rounded-xl transition-all active:scale-95">放棄獎勵並重置</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Bar: Controls -->
+                    <div class="mt-4 shrink-0 flex items-center justify-between bg-black/50 p-3 rounded-2xl border border-white/10 shadow-xl">
+                        <div class="flex gap-3">
+                            <button id="btn-traveler-auto" class="px-5 py-2.5 bg-slate-800 border border-emerald-500/30 rounded-xl text-[10px] font-black tracking-widest flex items-center gap-2 group transition-all active:scale-95">
+                                <div class="w-2 h-2 rounded-full bg-gray-600 group-hover:bg-gray-400"></div>
+                                <span class="text-gray-200 group-hover:text-white text-[10px]">AUTO</span>
+                            </button>
+                            <div class="flex items-center gap-2 bg-slate-800 px-4 rounded-xl border border-white/5">
+                                <span class="text-[9px] font-black text-gray-500 uppercase">Speed</span>
+                                <select id="traveler-speed" class="bg-transparent text-emerald-400 font-black text-xs outline-none cursor-pointer">
+                                    <option value="1">1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="100">100x</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2 bg-slate-800 px-4 rounded-xl border border-white/5">
+                                <span class="text-[9px] font-black text-gray-500 uppercase">Repeat</span>
+                                <input type="number" id="traveler-repeat-count" class="w-10 bg-transparent text-emerald-400 font-black text-xs outline-none text-center" value="1" min="1">
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <button id="btn-traveler-switch-currency" class="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-xl shadow-lg flex flex-col items-center transition-all active:scale-95">
+                                <span class="text-[7px] opacity-60">CURRENCY</span>
+                                <span id="traveler-current-currency" class="text-[10px] font-black text-yellow-300 leading-none">GOLD</span>
+                            </button>
+                            <button id="btn-traveler-reset" class="w-10 h-10 bg-slate-800 hover:bg-red-500/10 rounded-xl border border-white/10 flex items-center justify-center transition-all group active:scale-95 shadow-md" title="重置回第一關">
+                                <span class="text-lg group-hover:scale-110 transition-transform">🔄</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Right Sidebar: Statistics -->
+                <div class="w-52 bg-black/30 p-5 flex flex-col overflow-y-auto custom-scrollbar shrink-0">
+                    <h3 class="text-[10px] font-black text-emerald-400 mb-5 flex items-center gap-2 uppercase tracking-[0.2em] shadow-sm">
+                        <span class="text-lg">📊</span> 冒險統計面版
+                    </h3>
+                    <div class="flex flex-col gap-3">
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>累計局數</span><span class="opacity-20">GAMES</span>
+                            </div>
+                            <div id="traveler-stat-games" class="text-base font-mono text-white font-black italic">-</div>
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>總耗金幣</span><span class="opacity-20 text-emerald-500">SPENT</span>
+                            </div>
+                            <div id="traveler-stat-spent-gold" class="text-base font-mono text-white font-black italic">-</div>
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>總耗寶石</span><span class="opacity-20 text-purple-500">SPENT</span>
+                            </div>
+                            <div id="traveler-stat-spent-gem" class="text-base font-mono text-white font-black italic">-</div>
+                        </div>
+                        <div class="h-px bg-white/5 my-2"></div>
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>總得骰子</span><span class="opacity-20 text-yellow-500">EARNED</span>
+                            </div>
+                            <div id="traveler-stat-earned-dice" class="text-base font-mono text-yellow-500 font-black italic">-</div>
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>總得寶石</span><span class="opacity-20 text-emerald-500">EARNED</span>
+                            </div>
+                            <div id="traveler-stat-earned-gem" class="text-base font-mono text-emerald-500 font-black italic">-</div>
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div class="text-[8px] text-gray-500 uppercase font-black mb-1 flex justify-between">
+                                <span>總得金幣</span><span class="opacity-20 text-blue-500">EARNED</span>
+                            </div>
+                            <div id="traveler-stat-earned-gold" class="text-base font-mono text-blue-400 font-black italic">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

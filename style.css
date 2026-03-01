@@ -16,6 +16,10 @@
 }
 
 /* Animations */
+.auto-shrink-text {
+    transition: font-size 0.2s ease-out;
+}
+
 @keyframes coin-pop {
     0% {
         transform: scale(1);

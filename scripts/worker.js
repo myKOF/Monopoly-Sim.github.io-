@@ -65,6 +65,7 @@ let state = {
         speed: 1, // [NEW] Speed Multiplier
         stageConfig: [],
         rewardConfig: [],
+        pendingRewards: [], // [NEW] Stored rewards to be granted at completion
         stats: { totalGames: 1, totalSpentGold: 0, totalSpentGem: 0, totalEarnedDice: 0, totalEarnedGem: 0, totalEarnedGold: 0 }
     },
     archaeology: {
@@ -1299,7 +1300,10 @@ function sendUpdate(lastDiceRoll = 0, isAuto = false) {
             boxes: state.travelEvent.boxes,
             isFailed: state.travelEvent.isFailed,
             stats: state.travelEvent.stats,
-            stageConfig: state.travelEvent.stageConfig
+            stageConfig: state.travelEvent.stageConfig,
+            pendingRewards: state.travelEvent.pendingRewards,
+            isFinished: state.travelEvent.isFinished,
+            isTransitioning: state.travelEvent.isTransitioning
         },
         archaeology: {
             level: state.archaeology.level,
@@ -2001,6 +2005,7 @@ function initTravelEventState() {
     te.isFailed = false;
     te.isTransitioning = false;
     te.isFinished = false;
+    te.pendingRewards = []; // [NEW] Ensure clean start
     generateTravelBoxes();
 }
 
@@ -2065,9 +2070,9 @@ function handleTravelPick(index) {
         te.isFailed = true;
         sendUpdate();
     } else {
-        // Success: Grant box reward
+        // Success: Store box reward in pending
         if (box.value > 0) {
-            grantTravelReward(box.type, box.value);
+            addPendingTravelReward(box.type, box.value);
         }
 
         // Milestone reward from stageConfig (reward_probability check)
@@ -2077,7 +2082,7 @@ function handleTravelPick(index) {
         if (stageCfg && stageCfg.reward_type && stageCfg.reward_type.toUpperCase() !== 'NONE') {
             const prob = parseFloat(stageCfg.reward_probability) || 0;
             if (Math.random() < prob) {
-                grantTravelReward(stageCfg.reward_type.toUpperCase(), parseInt(stageCfg.reward_value), true);
+                addPendingTravelReward(stageCfg.reward_type.toUpperCase(), parseInt(stageCfg.reward_value), true);
             }
         }
 
@@ -2097,6 +2102,7 @@ function handleTravelPick(index) {
                 te.isFinished = true;
                 te.isFailed = false;
                 te.boxes = []; // Clear boxes so they disappear from UI loop
+                commitPendingTravelRewards(); // [NEW] Grant all accumulated rewards
                 self.postMessage({ type: 'TRAVEL_COMPLETE' });
             }
             te.isTransitioning = false;
@@ -2150,6 +2156,7 @@ function handleTravelReset() {
     te.isFailed = false;
     te.isTransitioning = false;
     te.isFinished = false;
+    te.pendingRewards = []; // [NEW]
     te.stats.totalGames++;
     generateTravelBoxes();
     sendUpdate();
@@ -2161,6 +2168,7 @@ function handleTravelFullReset() {
     te.isFailed = false;
     te.isTransitioning = false;
     te.isFinished = false;
+    te.pendingRewards = []; // [NEW]
     // Clear all statistics to initial state
     te.stats = {
         totalGames: 1,
@@ -2179,29 +2187,42 @@ function handleTravelGiveup() {
     te.level = 1;
     te.isFailed = false;
     te.isTransitioning = false;
+    te.pendingRewards = []; // [NEW] Lose everything
     generateTravelBoxes();
     sendUpdate();
 }
 
-function grantTravelReward(type, value, isMilestone = false) {
+function addPendingTravelReward(type, value, isMilestone = false) {
     const te = state.travelEvent;
-    const source = isMilestone ? "關卡獎勵" : "開箱獎勵";
     const mappedType = type.toUpperCase() === 'COIN' ? 'GOLD' : type.toUpperCase();
+    te.pendingRewards.push({ type: mappedType, value: value, isMilestone: isMilestone });
+}
 
-    if (mappedType === 'GOLD') {
-        addMoney(value, 'TRAVEL_EVENT', `旅行家活動 ${source}：金幣 ${value}`);
-        te.stats.totalEarnedGold += value;
-    } else if (mappedType === 'GEM') {
-        state.gems += value;
-        te.stats.totalEarnedGem += value;
-        recordLog({ turn: state.turn, position: state.position, event: "GEM", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：寶石 ${value}` });
-    } else if (mappedType === 'DICE') {
-        state.dice += value;
-        state.totalEarnedDice += value;
-        te.stats.totalEarnedDice += value;
-        state.earnedDiceBreakdown['旅行家'] = (state.earnedDiceBreakdown['旅行家'] || 0) + value;
-        recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：骰子 ${value}` });
-    }
+function commitPendingTravelRewards() {
+    const te = state.travelEvent;
+    if (!te.pendingRewards || te.pendingRewards.length === 0) return;
+
+    te.pendingRewards.forEach(reward => {
+        const { type, value, isMilestone } = reward;
+        const source = isMilestone ? "關卡獎勵" : "開箱獎勵";
+
+        if (type === 'GOLD') {
+            addMoney(value, 'TRAVEL_EVENT', `旅行家活動 ${source}：金幣 ${value}`);
+            te.stats.totalEarnedGold += value;
+        } else if (type === 'GEM') {
+            state.gems += value;
+            te.stats.totalEarnedGem += value;
+            recordLog({ turn: state.turn, position: state.position, event: "GEM", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：寶石 ${value}` });
+        } else if (type === 'DICE') {
+            state.dice += value;
+            state.totalEarnedDice += value;
+            te.stats.totalEarnedDice += value;
+            state.earnedDiceBreakdown['旅行家'] = (state.earnedDiceBreakdown['旅行家'] || 0) + value;
+            recordLog({ turn: state.turn, position: state.position, event: "DICE", delta_gold: 0, current_balance: state.money, detail: `旅行家活動 ${source}：骰子 ${value}` });
+        }
+    });
+
+    te.pendingRewards = []; // Clear after granting
 }
 
 // --- Archaeology Activity Logic [NEW] ---

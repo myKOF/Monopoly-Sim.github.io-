@@ -499,6 +499,7 @@ const ui = {
     travelerStatEarnedGold: document.getElementById('traveler-stat-earned-gold'),
     travelerHeaderGold: document.getElementById('traveler-header-gold'),
     travelerHeaderGem: document.getElementById('traveler-header-gem'),
+    travelerHeaderDice: document.getElementById('traveler-header-dice'),
     travelerCurrentCurrency: document.getElementById('traveler-current-currency'),
     btnTravelerContinue: document.getElementById('btn-traveler-continue'),
     btnTravelerGiveup: document.getElementById('btn-traveler-giveup'),
@@ -519,7 +520,10 @@ const ui = {
     travelerInsufficientIcon: document.getElementById('traveler-insufficient-icon'),
     travelerFinishedMsg: document.getElementById('traveler-finished-msg'),
     travelerStatGames: document.getElementById('traveler-stat-games'),
+    travelerPendingList: document.getElementById('traveler-pending-list'),
+    travelerLostPreview: document.getElementById('traveler-lost-preview'),
     dialogTravelerComplete: document.getElementById('traveler-complete-dialog'),
+    travelerCompleteRewards: document.getElementById('traveler-complete-rewards'),
     btnTravelerReplay: document.getElementById('btn-traveler-replay'),
     travelerRepeatInput: document.getElementById('traveler-repeat-count'),
 
@@ -2240,6 +2244,7 @@ function renderTravelerEvent() {
 
     if (ui.travelerHeaderGold) ui.travelerHeaderGold.textContent = state.money.toLocaleString();
     if (ui.travelerHeaderGem) ui.travelerHeaderGem.textContent = (state.gems || 0).toLocaleString();
+    if (ui.travelerHeaderDice) ui.travelerHeaderDice.textContent = (state.dice || 0).toLocaleString();
 
     const displayLevel = Math.min(te.level, 20);
     if (ui.travelerLevelDisp) ui.travelerLevelDisp.textContent = `STAGE ${displayLevel}`;
@@ -2366,17 +2371,116 @@ function renderTravelerEvent() {
     if (ui.travelerStatEarnedGold) ui.travelerStatEarnedGold.textContent = te.stats.totalEarnedGold.toLocaleString();
     if (ui.travelerStatGames) ui.travelerStatGames.textContent = te.stats.totalGames.toLocaleString();
 
+    // Render Pending Rewards Sidebar
+    const pendingList = te.pendingRewards || [];
+    if (ui.travelerPendingList) {
+        // Group rewards for a cleaner list
+        const groupedMap = new Map();
+        pendingList.forEach(r => {
+            if (!r) return;
+            const key = r.type;
+            if (!groupedMap.has(key)) groupedMap.set(key, 0);
+            groupedMap.set(key, groupedMap.get(key) + r.value);
+        });
+
+        let html = '';
+        groupedMap.forEach((val, type) => {
+            let icon = '🎲';
+            let colorClass = 'text-blue-400 font-mono';
+            if (type === 'GOLD') { icon = '💰'; colorClass = 'text-yellow-400 font-mono'; }
+            if (type === 'GEM') { icon = '💎'; colorClass = 'text-purple-400 font-mono'; }
+
+            html += `
+                <div class="bg-white/5 border border-white/5 rounded-lg p-2.5 flex items-center gap-3 animate-in slide-in-from-left duration-300">
+                    <span class="text-2xl">${icon}</span>
+                    <div class="flex flex-col">
+                        <span class="${colorClass} font-black text-sm">${val.toLocaleString()}</span>
+                        <span class="text-[8px] text-gray-400 uppercase tracking-widest font-bold">${type === 'GOLD' ? 'GOLD COINS' : type === 'GEM' ? 'PURPLE GEMS' : 'DICE ROLLS'}</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        if (!html) {
+            html = `<div class="h-full flex flex-col items-center justify-center opacity-30 text-center px-4">
+                        <div class="text-2xl mb-2">📦</div>
+                        <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">目前尚無獲取的暫存獎勵</div>
+                    </div>`;
+        }
+        ui.travelerPendingList.innerHTML = html;
+    }
+
+    // Render Lost Rewards Preview in Fail Overlay
+    if (ui.travelerLostPreview && te.isFailed) {
+        const groupedMap = new Map();
+        pendingList.forEach(r => {
+            if (!r) return;
+            const key = r.type;
+            if (!groupedMap.has(key)) groupedMap.set(key, 0);
+            groupedMap.set(key, groupedMap.get(key) + r.value);
+        });
+
+        let html = '';
+        groupedMap.forEach((val, type) => {
+            let icon = '🎲';
+            let colorClass = 'text-blue-400';
+            if (type === 'GOLD') { icon = '💰'; colorClass = 'text-yellow-400'; }
+            if (type === 'GEM') { icon = '💎'; colorClass = 'text-purple-400'; }
+
+            html += `
+                <div class="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-lg">
+                    <span class="text-base">${icon}</span>
+                    <span class="${colorClass} font-bold text-sm">${val.toLocaleString()}</span>
+                </div>
+            `;
+        });
+
+        if (!html) {
+            html = `<div class="text-[11px] text-white/30 italic uppercase tracking-widest">目前沒有可損失的獎勵</div>`;
+        }
+        ui.travelerLostPreview.innerHTML = html;
+    }
+
     handleTravelerAuto();
 }
 
+function autoShrinkStatFontSize(el, value, baseSizeRem, minSizeRem, maxChars) {
+    if (!el) return;
+    const str = String(value).replace(/,/g, '');
+    let fontSize = baseSizeRem;
+    if (str.length > maxChars) {
+        fontSize = Math.max(minSizeRem, baseSizeRem * (maxChars / str.length));
+    }
+    el.style.fontSize = `${fontSize}rem`;
+}
+
 function updateUI() {
-    if (ui.money && document.activeElement !== ui.money) ui.money.value = state.money;
-    if (ui.turn) ui.turn.textContent = state.turn;
-    if (ui.gems && document.activeElement !== ui.gems) ui.gems.value = state.gems || 0;
+    if (ui.money && document.activeElement !== ui.money) {
+        ui.money.value = state.money;
+        // Money input is w-20 (80px), around 7-8 chars at 14px
+        autoShrinkStatFontSize(ui.money, state.money, 0.875, 0.5, 7);
+    }
+    if (ui.turn) {
+        ui.turn.textContent = state.turn;
+        // Turn box is small, shrink earlier
+        autoShrinkStatFontSize(ui.turn, state.turn, 1.5, 0.7, 3);
+    }
+    if (ui.gems && document.activeElement !== ui.gems) {
+        ui.gems.value = state.gems || 0;
+        autoShrinkStatFontSize(ui.gems, state.gems, 0.875, 0.5, 5);
+    }
 
     // [NEW] Update Earned/Spent Dice
-    if (ui.earnedDice) ui.earnedDice.textContent = (state.totalEarnedDice || 0).toLocaleString();
-    if (ui.spentDice) ui.spentDice.textContent = (state.totalSpentDice || 0).toLocaleString();
+    if (ui.earnedDice) {
+        const earnedStr = (state.totalEarnedDice || 0).toLocaleString();
+        ui.earnedDice.textContent = earnedStr;
+        autoShrinkStatFontSize(ui.earnedDice, earnedStr, 1.5, 0.7, 5);
+    }
+    if (ui.spentDice) {
+        const spentStr = (state.totalSpentDice || 0).toLocaleString();
+        ui.spentDice.textContent = spentStr;
+        autoShrinkStatFontSize(ui.spentDice, spentStr, 1.5, 0.7, 5);
+    }
 
     // Collection UI
     const isColEnabled = state.collection && state.collection.enabled !== false;
@@ -4105,6 +4209,38 @@ if (ui.btnTravelerReplay) {
 
 function showTravelerCompleteDialog() {
     if (!ui.dialogTravelerComplete) return;
+
+    // Render consolidated rewards for the final screen
+    if (ui.travelerCompleteRewards && state.travelEvent) {
+        const pendingList = state.travelEvent.pendingRewards || [];
+        const groupedMap = new Map();
+        pendingList.forEach(r => {
+            if (!r) return;
+            const key = r.type;
+            if (!groupedMap.has(key)) groupedMap.set(key, 0);
+            groupedMap.set(key, groupedMap.get(key) + r.value);
+        });
+
+        let html = '';
+        groupedMap.forEach((val, type) => {
+            let icon = '🎲';
+            let colorClass = 'text-blue-400';
+            if (type === 'GOLD') { icon = '💰'; colorClass = 'text-yellow-400'; }
+            if (type === 'GEM') { icon = '💎'; colorClass = 'text-purple-400'; }
+
+            html += `
+                <div class="bg-slate-800/80 border border-emerald-500/20 rounded-2xl px-5 py-3 flex items-center gap-3 shadow-xl">
+                    <span class="text-2xl">${icon}</span>
+                    <span class="${colorClass} font-black text-xl">${val.toLocaleString()}</span>
+                </div>
+            `;
+        });
+
+        if (!html) {
+            html = `<div class="text-[11px] text-white/30 italic uppercase tracking-widest">本次無獲得額外獎勵</div>`;
+        }
+        ui.travelerCompleteRewards.innerHTML = html;
+    }
 
     ui.dialogTravelerComplete.classList.remove('hidden');
     setTimeout(() => {
