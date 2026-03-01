@@ -11,6 +11,10 @@ let partnerAutoInjectInterval = null; // [NEW]
 let magicPlantConfig = []; // [NEW]
 let magicPlantWateringTimer = null; // [NEW]
 
+let isArchaeologyAuto = false; // [NEW]
+let archaeologyAutoTimer = null; // [NEW]
+let archaeologySpeed = 1; // [NEW]
+
 // debug: visual error logger (Keep this)
 window.onerror = function (msg, url, line, col, error) {
     console.error("Global Error:", msg, error);
@@ -459,6 +463,9 @@ const ui = {
     statPartnerTotalTokens: document.getElementById('stat-partner-total-tokens'),
     statPartnerSpentTokens: document.getElementById('stat-partner-spent-tokens'),
     statPartnerTotalScore: document.getElementById('stat-partner-total-score'),
+    statPartnerTotalDice: document.getElementById('stat-partner-total-dice'),
+    statPartnerTotalGold: document.getElementById('stat-partner-total-gold'),
+    statPartnerTotalGem: document.getElementById('stat-partner-total-gem'),
 
     // [NEW] Scratch Card DOM Elements
     btnScratchOpen: document.getElementById('btn-scratch-open'),
@@ -891,21 +898,41 @@ async function initGame() {
                 line = line.trim();
                 if (!line) return;
 
-                // Regex to capture: ID, Type, Value (handling {}), Desc
-                const match = line.match(/^(\d+),([^,]+),("?\{[^}]+\}"?|[^,]+),(.+)$/);
+                // Standard CSV split with quotes support
+                const parts = [];
+                let current = '';
+                let insideQuote = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"' && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else if (char === '"') {
+                        insideQuote = !insideQuote;
+                    } else if (char === ',' && !insideQuote) {
+                        parts.push(current);
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                parts.push(current);
 
-                if (match) {
-                    const type = match[2].trim();
-                    let value = match[3].trim();
+                if (parts.length >= 4) {
+                    const type = parts[1].trim();
+                    let value = parts[2].trim();
 
-                    if (value.startsWith('{') || value.startsWith('"{')) {
-                        // Array parsing
-                        value = value.replace(/^"|"$|{|}/g, '');
-                        systemConfig[type] = value.split(',').map(n => parseFloat(n.trim()));
+                    if (value.startsWith('{') && value.endsWith('}')) {
+                        // Numeric Array parsing (e.g. {10,100})
+                        let inner = value.substring(1, value.length - 1);
+                        systemConfig[type] = inner.split(',').map(n => parseFloat(n.trim()));
+                    } else if (value.startsWith('[') && value.endsWith(']')) {
+                        // JSON Array parsing
+                        systemConfig[type] = value;
                     } else {
                         // Numeric or String parsing
                         if (isNaN(parseFloat(value))) {
-                            systemConfig[type] = value.trim();
+                            systemConfig[type] = value;
                         } else {
                             systemConfig[type] = parseFloat(value);
                         }
@@ -2065,6 +2092,15 @@ function renderPartnerGame() {
     }
     if (ui.statPartnerTotalTokens) ui.statPartnerTotalTokens.textContent = (pg.tokens + (pg.stats ? pg.stats.totalSpent : 0)).toLocaleString();
     if (ui.statPartnerSpentTokens) ui.statPartnerSpentTokens.textContent = (pg.stats ? pg.stats.totalSpent : 0).toLocaleString();
+
+    // [NEW] Reward Stats
+    if (ui.statPartnerTotalDice) ui.statPartnerTotalDice.textContent = (pg.stats && pg.stats.totalDice || 0).toLocaleString();
+    if (ui.statPartnerTotalGold) {
+        const goldVal = (pg.stats && pg.stats.totalGold || 0);
+        ui.statPartnerTotalGold.textContent = goldVal >= 1000000 ? (goldVal / 1000000).toFixed(2) + "M" : goldVal.toLocaleString();
+    }
+    if (ui.statPartnerTotalGem) ui.statPartnerTotalGem.textContent = (pg.stats && pg.stats.totalGem || 0).toLocaleString();
+
     if (ui.dispPartnerMult) ui.dispPartnerMult.textContent = `x${pg.multiplier || 1}`;
 
     let totalScore = 0;
@@ -2188,7 +2224,85 @@ function renderPartnerGame() {
             else btn.classList.remove('active');
         });
     }
+
+    // [NEW] Grand Prize Rendering logic
+    const bonusContainer = document.getElementById('partner-bonus-reward-container');
+    const bonusLocked = document.getElementById('partner-bonus-locked-overlay');
+    const bonusContent = document.getElementById('partner-bonus-content');
+    const bonusRewardsList = document.getElementById('partner-bonus-rewards-list');
+
+    if (pg && bonusContainer && bonusRewardsList) {
+        if (pg.bonusClaimed) {
+            bonusContainer.classList.add('is-completed', 'border-amber-400/60', 'bg-amber-400/10', 'shadow-[0_0_40px_rgba(245,158,11,0.25)]');
+            bonusContainer.classList.remove('border-dashed', 'bg-black/20', 'border-white/10');
+            if (bonusLocked) bonusLocked.classList.add('hidden', 'opacity-0');
+        } else {
+            bonusContainer.classList.remove('is-completed', 'border-amber-400/60', 'bg-amber-400/10', 'shadow-[0_0_40px_rgba(245,158,11,0.25)]');
+            bonusContainer.classList.add('border-dashed', 'bg-black/20', 'border-white/10');
+            if (bonusLocked) bonusLocked.classList.remove('hidden', 'opacity-0');
+        }
+
+        // Update reward list based on config
+        const rawBonus = state.systemConfig ? state.systemConfig.Partner_Game_Bonus_Reward : null;
+        if (rawBonus) {
+            try {
+                const rewards = JSON.parse(rawBonus);
+                bonusRewardsList.innerHTML = '';
+                rewards.forEach(r => {
+                    const item = document.createElement('div');
+                    item.className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner transition-all ${pg.bonusClaimed ? 'bg-amber-400/10 border-amber-400/30' : 'bg-white/5'}`;
+                    const icon = r.type === 'DICE' ? '🎲' : (r.type === 'GEM' ? '💎' : '💰');
+                    let valStr = "";
+                    if (r.type === 'GOLD') {
+                        valStr = r.value >= 1000000 ? (r.value / 1000000).toFixed(1) + "M" : r.value.toLocaleString();
+                    } else {
+                        valStr = r.value.toLocaleString();
+                    }
+                    item.innerHTML = `
+                        <span class="text-xl">${icon}</span>
+                        <span class="text-sm font-black font-mono ${pg.bonusClaimed ? 'text-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.5)]' : 'text-white/90'}">${valStr}</span>
+                    `;
+                    bonusRewardsList.appendChild(item);
+                });
+            } catch (e) {
+                console.warn("JSON error in partner bonus", e);
+                // Fallback rendering
+                bonusRewardsList.innerHTML = `
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                        <span class="text-xl">🎲</span>
+                        <span class="text-sm font-black font-mono text-white/40">10,000</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                        <span class="text-xl">💎</span>
+                        <span class="text-sm font-black font-mono text-white/40">2,000</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                        <span class="text-xl">💰</span>
+                        <span class="text-sm font-black font-mono text-white/40">5.0M</span>
+                    </div>
+                `;
+            }
+        } else {
+            // Default fallback if config not ready, to avoid "---" or empty area
+            bonusRewardsList.innerHTML = `
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                    <span class="text-xl">🎲</span>
+                    <span class="text-sm font-black font-mono text-white/40">10,000</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                    <span class="text-xl">💎</span>
+                    <span class="text-sm font-black font-mono text-white/40">2,000</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+                    <span class="text-xl">💰</span>
+                    <span class="text-sm font-black font-mono text-white/40">5.0M</span>
+                </div>
+            `;
+        }
+    }
 }
+
+
 
 let travelerAutoActive = false;
 let travelerAutoTimer = null;
@@ -4287,7 +4401,7 @@ function renderArchaeology() {
     const arch = state.archaeology;
     if (!arch) return;
 
-    if (ui.archaeologyLevel) ui.archaeologyLevel.textContent = arch.level;
+    if (ui.archaeologyLevelDisp) ui.archaeologyLevelDisp.textContent = arch.level;
 
     // Highlight active group button
     document.querySelectorAll('.group-btn').forEach(btn => {
@@ -4338,7 +4452,7 @@ function renderArchaeology() {
 
     // Update AUTO dot
     if (ui.dotArchaeologyAuto) {
-        ui.dotArchaeologyAuto.className = `w-2.5 h-2.5 rounded-full transition-all duration-300 ${arch.autoDig ? 'bg-amber-500 shadow-[0_0_10px_rgba(242,158,11,0.8)]' : 'bg-gray-600'}`;
+        ui.dotArchaeologyAuto.className = `w-2.5 h-2.5 rounded-full transition-all duration-300 ${isArchaeologyAuto ? 'bg-amber-500 shadow-[0_0_10px_rgba(242,158,11,0.8)]' : 'bg-gray-600'}`;
     }
 }
 
@@ -4607,9 +4721,13 @@ if (ui.btnArchaeologyOpen) {
 if (ui.btnCloseArchaeology) {
     ui.btnCloseArchaeology.addEventListener('click', () => {
         if (ui.modalArchaeology) {
-            // POINT 2 & 3: Stop action and update UI state immediately
-            if (state.archaeology && state.archaeology.autoDig) {
-                state.archaeology.autoDig = false; // Optimistic local update
+            // Stop action and update UI state immediately
+            if (isArchaeologyAuto) {
+                isArchaeologyAuto = false; // Optimistic local update
+                if (archaeologyAutoTimer) {
+                    clearTimeout(archaeologyAutoTimer);
+                    archaeologyAutoTimer = null;
+                }
                 renderArchaeology();
                 worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
             }
@@ -4630,17 +4748,63 @@ if (ui.btnCloseArchaeology) {
 
 if (ui.btnArchaeologyAuto) {
     ui.btnArchaeologyAuto.addEventListener('click', () => {
-        const nextState = !state.archaeology.autoDig;
-        // Instant feedback Point 3
-        state.archaeology.autoDig = nextState;
+        isArchaeologyAuto = !isArchaeologyAuto;
+        // In the worker, state.archaeology.autoDig is used to determine if steps can happen.
+        // We sync it but use a local loop for responsive timing.
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: isArchaeologyAuto } });
+
+        if (isArchaeologyAuto) {
+            runArchaeologyAuto();
+        } else {
+            if (archaeologyAutoTimer) {
+                clearTimeout(archaeologyAutoTimer);
+                archaeologyAutoTimer = null;
+            }
+        }
         renderArchaeology();
-        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: nextState } });
     });
 }
 
+function runArchaeologyAuto() {
+    if (!isArchaeologyAuto) return;
+    const arch = state.archaeology;
+
+    // Stop if finished or transitioning
+    if (!arch || arch.isFinished) {
+        if (archaeologyAutoTimer) {
+            clearTimeout(archaeologyAutoTimer);
+            archaeologyAutoTimer = null;
+        }
+        return;
+    }
+
+    if (arch.isTransitioning) {
+        // Wait and check again later if still transitioning
+        archaeologyAutoTimer = setTimeout(runArchaeologyAuto, 200);
+        return;
+    }
+
+    if (arch.tokens <= 0) {
+        isArchaeologyAuto = false;
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
+        renderArchaeology();
+        return;
+    }
+
+    // Single step executed in worker
+    worker.postMessage({ type: 'ARCHAEOLOGY_AUTO_STEP' });
+
+    // Frequency logic mirroring Scratch Card
+    const delay = Math.max(10, Math.round(500 / archaeologySpeed));
+    archaeologyAutoTimer = setTimeout(runArchaeologyAuto, delay);
+}
+
 if (ui.archaeologySpeed) {
+    // Sync initial speed from UI
+    archaeologySpeed = parseInt(ui.archaeologySpeed.value) || 1;
     ui.archaeologySpeed.addEventListener('change', () => {
-        worker.postMessage({ type: 'ARCHAEOLOGY_SET_SPEED', payload: { speed: parseInt(ui.archaeologySpeed.value) } });
+        archaeologySpeed = parseInt(ui.archaeologySpeed.value) || 1;
+        worker.postMessage({ type: 'ARCHAEOLOGY_SET_SPEED', payload: { speed: archaeologySpeed } });
     });
 }
 

@@ -205,6 +205,7 @@ self.onmessage = function (e) {
             state.isRunning = false;
             init2048State();
             initPartnerGameState(); // [NEW]
+            if (payload.partnerGameConfig) state.partnerGame.config = payload.partnerGameConfig; // Sync config
             initVolcanoState(payload.volcanoConfig); // [NEW]
             state.scratchCard.rewardConfig = payload.scratchCardConfig || [];
             state.scratchCard.config = state.scratchCard.rewardConfig; // backwards compat
@@ -522,15 +523,15 @@ self.onmessage = function (e) {
             break;
         case 'ARCHAEOLOGY_SET_AUTO':
             state.archaeology.autoDig = payload.enabled;
-            if (state.archaeology.autoDig) {
-                runArchaeologyAuto();
-            } else {
-                if (state.archAutoTimer) {
-                    clearTimeout(state.archAutoTimer);
-                    state.archAutoTimer = null;
-                }
+            // Timer control moved to main thread (script.js) for better responsiveness
+            if (!state.archaeology.autoDig && state.archAutoTimer) {
+                clearTimeout(state.archAutoTimer);
+                state.archAutoTimer = null;
             }
             sendUpdate();
+            break;
+        case 'ARCHAEOLOGY_AUTO_STEP':
+            handleArchaeologyAutoStep();
             break;
         case 'ARCHAEOLOGY_SET_SPEED':
             state.archaeology.speed = payload.speed;
@@ -1555,17 +1556,20 @@ function sendRouletteUpdate(spinResultItem) {
 // [NEW] Partner Game Core Implementation
 function initPartnerGameState() {
     const initialTokens = state.systemConfig.Partner_Game_Token ? parseInt(state.systemConfig.Partner_Game_Token) : 10000;
+    const oldConfig = state.partnerGame ? state.partnerGame.config : [];
 
     state.partnerGame = {
         tokens: initialTokens,
         multiplier: 1,
+        bonusClaimed: false, // [NEW]
+        config: oldConfig, // Preserve config
         towers: [
             { id: 1, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
             { id: 2, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
             { id: 3, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] },
             { id: 4, myScore: 0, partnerScore: 0, joined: false, partnerTokens: 0, nextBotTick: 0, claimedMilestones: [] }
         ],
-        stats: { totalSpent: 0, totalGenerated: 0 }
+        stats: { totalSpent: 0, totalGenerated: 0, totalDice: 0, totalGold: 0, totalGem: 0 }
     };
     sendUpdate();
 }
@@ -1590,7 +1594,7 @@ function handlePartnerInject(towerId) {
     const cost = mult;
 
     const towerMilestones = pg.config ? pg.config.filter(m => m.partner == towerId) : [];
-    const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 30000;
+    const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 40000;
 
     if (!tower || pg.tokens < cost || (tower.myScore + tower.partnerScore) >= maxScore) return;
 
@@ -1624,9 +1628,13 @@ function checkPartnerMilestones(towerId) {
             tower.claimedMilestones.push(m.required);
 
             // Grant Rewards
-            if (m.coin) addMoney(m.coin, 'EVENT_REWARD', `合作伙伴大賽隊伍 ${towerId} 達成 ${m.required} 分獎勵`);
+            if (m.coin) {
+                addMoney(m.coin, 'EVENT_REWARD', `合作伙伴大賽隊伍 ${towerId} 達成 ${m.required} 分獎勵`);
+                state.partnerGame.stats.totalGold = (state.partnerGame.stats.totalGold || 0) + m.coin;
+            }
             if (m.gem) {
                 state.gems += m.gem;
+                state.partnerGame.stats.totalGem = (state.partnerGame.stats.totalGem || 0) + m.gem;
                 recordLog({
                     turn: state.turn, position: state.position, event: "GEM", delta_gold: 0,
                     current_balance: state.money, detail: `合作伙伴隊伍 ${towerId} 獎勵：寶石 ${m.gem}`
@@ -1635,6 +1643,7 @@ function checkPartnerMilestones(towerId) {
             if (m.dice) {
                 state.dice += m.dice;
                 state.totalEarnedDice += m.dice;
+                state.partnerGame.stats.totalDice = (state.partnerGame.stats.totalDice || 0) + m.dice;
                 state.earnedDiceBreakdown['合作伙伴活動'] = (state.earnedDiceBreakdown['合作伙伴活動'] || 0) + m.dice;
                 recordLog({
                     turn: state.turn, position: state.position, event: "EVENT_REWARD_DICE", delta_gold: 0,
@@ -1643,7 +1652,56 @@ function checkPartnerMilestones(towerId) {
             }
         }
     });
+    // [NEW] Check if all towers are finished for grand bonus
+    checkPartnerBonusReward();
 }
+
+// [NEW] Check for grand bonus reward after all partners are finished
+function checkPartnerBonusReward() {
+    if (!state.partnerGame || state.partnerGame.bonusClaimed) return;
+
+    // Check if ALL 4 partners reached maxScore
+    const allFinished = state.partnerGame.towers.every(tower => {
+        const towerMilestones = state.partnerGame.config ? state.partnerGame.config.filter(m => m.partner == tower.id) : [];
+        const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 40000;
+        return (tower.myScore + tower.partnerScore) >= maxScore;
+    });
+
+    if (allFinished) {
+        state.partnerGame.bonusClaimed = true;
+
+        let bonusStr = state.systemConfig.Partner_Game_Bonus_Reward;
+        if (bonusStr) {
+            try {
+                // Parse reward JSON from config
+                const rewards = JSON.parse(bonusStr);
+                rewards.forEach(r => {
+                    if (r.type === 'DICE') {
+                        state.dice += r.value;
+                        state.totalEarnedDice += r.value;
+                        state.partnerGame.stats.totalDice = (state.partnerGame.stats.totalDice || 0) + r.value;
+                        state.earnedDiceBreakdown['合作伙伴最終大獎'] = (state.earnedDiceBreakdown['合作伙伴最終大獎'] || 0) + r.value;
+                    } else if (r.type === 'GEM') {
+                        state.gems += r.value;
+                        state.partnerGame.stats.totalGem = (state.partnerGame.stats.totalGem || 0) + r.value;
+                    } else if (r.type === 'GOLD') {
+                        state.money += r.value;
+                        state.partnerGame.stats.totalGold = (state.partnerGame.stats.totalGold || 0) + r.value;
+                    }
+                });
+
+                recordLog({
+                    turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: 0, current_balance: state.money,
+                    detail: "💖 恭喜達成全合作伙伴目標！獲得最終大獎獎勵！"
+                });
+            } catch (e) {
+                console.warn("Failed to parse Partner Bonus Reward", e);
+            }
+        }
+        sendUpdate();
+    }
+}
+
 
 function tickPartnerBots() {
     if (!state.partnerGame || !state.partnerGame.towers) return;
@@ -1652,7 +1710,7 @@ function tickPartnerBots() {
 
     state.partnerGame.towers.forEach(tower => {
         const towerMilestones = state.partnerGame.config ? state.partnerGame.config.filter(m => m.partner == tower.id) : [];
-        const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 30000;
+        const maxScore = towerMilestones.length > 0 ? Math.max(...towerMilestones.map(m => Number(m.required))) : 40000;
 
         if (!tower.joined || (tower.myScore + tower.partnerScore) >= maxScore) return;
 
@@ -2397,10 +2455,7 @@ function processArchaeologyLevelComplete() {
             arch.isTransitioning = false;
             state.archTransitionTimer = null;
             sendUpdate();
-            // Point: Only resume if autoDig is STILL true at this moment
-            if (arch.autoDig) {
-                runArchaeologyAuto();
-            }
+            // Next step will be triggered by main thread's auto loop detecting !isTransitioning
         }, delay);
     } else {
         // No more levels in this group - Hard Stop
@@ -2413,9 +2468,10 @@ function processArchaeologyLevelComplete() {
     sendUpdate();
 }
 
-function runArchaeologyAuto() {
+function handleArchaeologyAutoStep() {
     const arch = state.archaeology;
 
+    // Timer management moved to script.js. This function now only does ONE step.
     if (state.archAutoTimer) {
         clearTimeout(state.archAutoTimer);
         state.archAutoTimer = null;
@@ -2460,17 +2516,13 @@ function runArchaeologyAuto() {
         }
 
         const heatmap = new Float32Array(rows * cols);
-
-        // For each item to be found, check all potential valid placements
         remainingItems.forEach(item => {
             const [w_base, h_base] = item.id.replace('cell_', '').split('_').map(Number);
             const sizes = (w_base === h_base) ? [{ w: w_base, h: h_base }] : [{ w: w_base, h: h_base }, { w: h_base, h: w_base }];
-
             sizes.forEach(size => {
                 const { w, h } = size;
                 for (let r = 0; r <= rows - h; r++) {
                     for (let c = 0; c <= cols - w; c++) {
-                        // Check if item CAN be placed here (no revealed cells in the area)
                         let possible = true;
                         for (let ir = 0; ir < h; ir++) {
                             for (let ic = 0; ic < w; ic++) {
@@ -2482,15 +2534,10 @@ function runArchaeologyAuto() {
                             }
                             if (!possible) break;
                         }
-
                         if (possible) {
-                            // If possible, increase weight of all covered cells
-                            // We give a slight boost to centers of this placement
                             for (let ir = 0; ir < h; ir++) {
                                 for (let ic = 0; ic < w; ic++) {
                                     const idx = (r + ir) * cols + (c + ic);
-                                    // Base score: 1 count per placement
-                                    // Modifier for "center-ness" within the placement itself
                                     const dr = Math.abs(ir - (h - 1) / 2);
                                     const dc = Math.abs(ic - (w - 1) / 2);
                                     const distScore = 1.0 - (dr + dc) * 0.1;
@@ -2503,7 +2550,6 @@ function runArchaeologyAuto() {
             });
         });
 
-        // Pick max score
         let maxScore = -1;
         let candidates = [];
         for (let i = 0; i < heatmap.length; i++) {
@@ -2517,20 +2563,12 @@ function runArchaeologyAuto() {
         }
 
         if (candidates.length > 0) {
-            // Pick a candidate
-            // For spreading, we could pick further from current revealed? 
-            // but heatmap naturally does it. Random is fine among ties.
             targetIndex = candidates[Math.floor(Math.random() * candidates.length)];
         }
     }
 
     if (targetIndex !== -1) {
         handleArchaeologyDig(targetIndex);
-        // Delay before next auto move
-        if (arch.autoDig && !arch.isTransitioning) {
-            const delay = 500 / arch.speed; // Fast enough for 50x
-            state.archAutoTimer = setTimeout(runArchaeologyAuto, delay);
-        }
     } else {
         arch.autoDig = false;
         sendUpdate();

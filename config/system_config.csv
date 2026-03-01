@@ -21,3 +21,4 @@
 20,Volcano_Speed,15,警匪追逐速度(格/秒)
 21,Volcano_Board_Count,"{20,35}",警匪追逐移動格數
 22,Travel_Stage_Time,1,旅行家活動關卡間隔時間
+23,Partner_Game_Bonus_Reward,"{DICE,20000,COIN,1000000,GEM,5000}",合作伙伴全通關獎勵

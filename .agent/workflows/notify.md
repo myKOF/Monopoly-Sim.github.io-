@@ -1,11 +1,27 @@
 ---
-description: 執行通知動作 (JavaScript)
+description: 執行通知與自動化規則 (Rules for Notification and Automation)
 ---
 
-當需要通知使用者時，根據情況選擇以下其中一個版本在瀏覽器 Console 執行：
+# 運作規則 (Operating Rules)
 
-### 1. 簡短通知 (持續 5 秒後關閉)
-適用於：一般作業完成或需要中途確認。
+1. **溝通語言**：
+   - 與使用者的溝通一律使用**中文**。
+   - 內部的思考過程 (Thought)、代碼修改或執行動作的說明維持**英語**。
+
+2. **自動化執行計畫**：
+   - 擬定好的執行計劃除非特別聲明，否則**不需要審閱確認**，請直接開始執行。
+   - 若步驟需要使用者允許 (Run/Allow)，請優先使用自動化選項 (SafeToAutoRun: true)，直接執行。
+
+3. **例外通知條件**：
+   - 只有在系統強制要求手動確認（如：無法自動化的安全限制）時，才需要執行以下通知動作。
+   - 儘量在背景執行，不要強制彈窗，除非是最後的驗收階段。
+
+# 通知動作 (Notification Actions)
+
+根據情況在瀏覽器 Console 執行對應的 JavaScript：
+
+### 1. 系統強制確認通知 (閃爍 5 秒後關閉)
+適用於：系統不允許自動化，必須手動點擊「Run」或「Allow」的情況。
 
 ```javascript
 (function() {
@@ -23,8 +39,8 @@ description: 執行通知動作 (JavaScript)
 })();
 ```
 
-### 2. 永久通知 (彈窗 + 持續閃爍)
-適用於：完成作業等待驗收。
+### 2. 作業完成驗收通知 (彈窗 + 永久閃爍)
+適用於：所有作業已完成 (Accept All)，等待使用者驗收的情況。
 
 ```javascript
 (function() {
@@ -32,6 +48,7 @@ description: 執行通知動作 (JavaScript)
     setInterval(() => {
         document.title = (document.title === originalTitle) ? "【待確認】" : originalTitle;
     }, 500);
+    // 永久閃爍直到網頁關閉，並彈窗提醒
     alert("作業已完成，請驗收！");
 })();
 ```
