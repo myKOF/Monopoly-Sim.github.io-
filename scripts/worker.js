@@ -547,7 +547,7 @@ self.onmessage = function (e) {
             sendUpdate();
             // Automatically continue if autoDig was on
             if (state.archaeology.autoDig) {
-                runArchaeologyAuto();
+                // The auto-loop is handled by the main thread in script.js
             }
             break;
         case 'ARCHAEOLOGY_RESET':
@@ -1658,7 +1658,7 @@ function checkPartnerMilestones(towerId) {
 
 // [NEW] Check for grand bonus reward after all partners are finished
 function checkPartnerBonusReward() {
-    if (!state.partnerGame || state.partnerGame.bonusClaimed) return;
+    if (!state.partnerGame) return;
 
     // Check if ALL 4 partners reached maxScore
     const allFinished = state.partnerGame.towers.every(tower => {
@@ -1667,33 +1667,56 @@ function checkPartnerBonusReward() {
         return (tower.myScore + tower.partnerScore) >= maxScore;
     });
 
-    if (allFinished) {
-        state.partnerGame.bonusClaimed = true;
+    // If finished but stats are low, we may need to force grant (to fix claimed-but-missing-dice bug)
+    const needsGrant = allFinished && (!state.partnerGame.bonusClaimed || (state.partnerGame.stats.totalDice || 0) < 10000);
 
+    if (needsGrant) {
         let bonusStr = state.systemConfig.Partner_Game_Bonus_Reward;
         if (bonusStr) {
             try {
-                // Parse reward JSON from config
-                const rewards = JSON.parse(bonusStr);
-                rewards.forEach(r => {
-                    if (r.type === 'DICE') {
-                        state.dice += r.value;
-                        state.totalEarnedDice += r.value;
-                        state.partnerGame.stats.totalDice = (state.partnerGame.stats.totalDice || 0) + r.value;
-                        state.earnedDiceBreakdown['合作伙伴最終大獎'] = (state.earnedDiceBreakdown['合作伙伴最終大獎'] || 0) + r.value;
-                    } else if (r.type === 'GEM') {
-                        state.gems += r.value;
-                        state.partnerGame.stats.totalGem = (state.partnerGame.stats.totalGem || 0) + r.value;
-                    } else if (r.type === 'GOLD') {
-                        state.money += r.value;
-                        state.partnerGame.stats.totalGold = (state.partnerGame.stats.totalGold || 0) + r.value;
+                // Parse reward. System config usually gives {DICE,20000...} which pre-parser treats as Array or JSON
+                let rewards = [];
+                if (Array.isArray(bonusStr)) {
+                    for (let i = 0; i < bonusStr.length; i += 2) {
+                        rewards.push({ type: String(bonusStr[i]).trim().toUpperCase(), value: Number(bonusStr[i + 1]) });
                     }
-                });
+                } else {
+                    const cleaned = bonusStr.replace(/{/g, '[').replace(/}/g, ']');
+                    const parsed = JSON.parse(cleaned);
+                    rewards = Array.isArray(parsed) ? parsed.map((v, idx, arr) => {
+                        if (idx % 2 === 0) return { type: String(v).trim().toUpperCase(), value: Number(arr[idx + 1]) };
+                        return null;
+                    }).filter(x => x) : [];
+                }
 
-                recordLog({
-                    turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: 0, current_balance: state.money,
-                    detail: "💖 恭喜達成全合作伙伴目標！獲得最終大獎獎勵！"
-                });
+                if (rewards.length > 0) {
+                    // Only grant if not already likely granted (check if stats still low)
+                    if ((state.partnerGame.stats.totalDice || 0) < 10000) {
+                        rewards.forEach(r => {
+                            const val = Number(r.value) || 0;
+                            const type = r.type;
+                            if (type === 'DICE') {
+                                state.dice += val;
+                                state.totalEarnedDice += val;
+                                state.partnerGame.stats.totalDice = (state.partnerGame.stats.totalDice || 0) + val;
+                                // First version used '合作伙伴最終大獎'
+                                state.earnedDiceBreakdown['合作伙伴最終大獎'] = (state.earnedDiceBreakdown['合作伙伴最終大獎'] || 0) + val;
+                            } else if (type === 'GEM') {
+                                state.gems += val;
+                                state.partnerGame.stats.totalGem = (state.partnerGame.stats.totalGem || 0) + val;
+                            } else if (type === 'GOLD' || type === 'COIN' || type === 'MONEY') {
+                                state.money += val;
+                                state.partnerGame.stats.totalGold = (state.partnerGame.stats.totalGold || 0) + val;
+                            }
+                        });
+
+                        recordLog({
+                            turn: state.turn, position: state.position, event: "SYSTEM", delta_gold: 0, current_balance: state.money,
+                            detail: "💖 恭喜達成全合作伙伴目標！獲得最終大獎獎勵！"
+                        });
+                    }
+                    state.partnerGame.bonusClaimed = true;
+                }
             } catch (e) {
                 console.warn("Failed to parse Partner Bonus Reward", e);
             }
@@ -2433,7 +2456,7 @@ function processArchaeologyLevelComplete() {
     // Grant Reward
     const reward = arch.rewardConfigs.find(r => r.group === arch.group && r.level === arch.level);
     if (reward) {
-        grantArchaeologyReward(reward.reward_type, reward.reward_spec, reward.reward_value, `考古學關卡 ${arch.level} 獎勵`);
+        grantArchaeologyReward(reward.reward_type, reward.reward_spec, reward.reward_value, `考古挖掘獎勵`);
     }
 
     // Check if there is a next level in the CURRENT group

@@ -709,6 +709,10 @@ function workerMessageHandler(e) {
             if (repeatInput) repeatInput.value = repeatCount - 1;
             worker.postMessage({ type: 'ARCHAEOLOGY_RESTART' });
             console.log(`[Archaeology] Auto Replaying. Remaining: ${repeatCount - 1}`);
+            // Restart the auto-loop once the worker has reset the state
+            if (isArchaeologyAuto) {
+                setTimeout(runArchaeologyAuto, 500);
+            }
         }
     }
 
@@ -923,9 +927,13 @@ async function initGame() {
                     let value = parts[2].trim();
 
                     if (value.startsWith('{') && value.endsWith('}')) {
-                        // Numeric Array parsing (e.g. {10,100})
+                        // Array parsing (e.g. {10,100} or {DICE,200})
                         let inner = value.substring(1, value.length - 1);
-                        systemConfig[type] = inner.split(',').map(n => parseFloat(n.trim()));
+                        systemConfig[type] = inner.split(',').map(v => {
+                            const trimmed = v.trim();
+                            const num = parseFloat(trimmed);
+                            return isNaN(num) ? trimmed : num;
+                        });
                     } else if (value.startsWith('[') && value.endsWith(']')) {
                         // JSON Array parsing
                         systemConfig[type] = value;
@@ -2246,17 +2254,30 @@ function renderPartnerGame() {
         const rawBonus = state.systemConfig ? state.systemConfig.Partner_Game_Bonus_Reward : null;
         if (rawBonus) {
             try {
-                const rewards = JSON.parse(rawBonus);
+                // First version used JSON.parse. Note: script.js pre-parses {DICE,20,COIN,100} into ["DICE", "20", "COIN", "100"]
+                let rewards = [];
+                if (Array.isArray(rawBonus)) {
+                    for (let i = 0; i < rawBonus.length; i += 2) {
+                        rewards.push({ type: rawBonus[i], value: Number(rawBonus[i + 1]) });
+                    }
+                } else {
+                    rewards = JSON.parse(rawBonus);
+                }
+
                 bonusRewardsList.innerHTML = '';
                 rewards.forEach(r => {
                     const item = document.createElement('div');
                     item.className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner transition-all ${pg.bonusClaimed ? 'bg-amber-400/10 border-amber-400/30' : 'bg-white/5'}`;
-                    const icon = r.type === 'DICE' ? '🎲' : (r.type === 'GEM' ? '💎' : '💰');
+
+                    const rawType = String(r.type || "").trim().toUpperCase();
+                    const icon = rawType === 'DICE' ? '🎲' : (rawType === 'GEM' ? '💎' : '💰');
+
                     let valStr = "";
-                    if (r.type === 'GOLD') {
-                        valStr = r.value >= 1000000 ? (r.value / 1000000).toFixed(1) + "M" : r.value.toLocaleString();
+                    const rVal = Number(r.value) || 0;
+                    if (rawType === 'GOLD' || rawType === 'COIN' || rawType === 'MONEY') {
+                        valStr = rVal >= 1000000 ? (rVal / 1000000).toFixed(1) + "M" : rVal.toLocaleString();
                     } else {
-                        valStr = r.value.toLocaleString();
+                        valStr = rVal.toLocaleString();
                     }
                     item.innerHTML = `
                         <span class="text-xl">${icon}</span>
@@ -2266,40 +2287,29 @@ function renderPartnerGame() {
                 });
             } catch (e) {
                 console.warn("JSON error in partner bonus", e);
-                // Fallback rendering
-                bonusRewardsList.innerHTML = `
-                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                        <span class="text-xl">🎲</span>
-                        <span class="text-sm font-black font-mono text-white/40">10,000</span>
-                    </div>
-                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                        <span class="text-xl">💎</span>
-                        <span class="text-sm font-black font-mono text-white/40">2,000</span>
-                    </div>
-                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                        <span class="text-xl">💰</span>
-                        <span class="text-sm font-black font-mono text-white/40">5.0M</span>
-                    </div>
-                `;
+                renderBonusFallback(bonusRewardsList);
             }
         } else {
-            // Default fallback if config not ready, to avoid "---" or empty area
-            bonusRewardsList.innerHTML = `
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                    <span class="text-xl">🎲</span>
-                    <span class="text-sm font-black font-mono text-white/40">10,000</span>
-                </div>
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                    <span class="text-xl">💎</span>
-                    <span class="text-sm font-black font-mono text-white/40">2,000</span>
-                </div>
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
-                    <span class="text-xl">💰</span>
-                    <span class="text-sm font-black font-mono text-white/40">5.0M</span>
-                </div>
-            `;
+            renderBonusFallback(bonusRewardsList);
         }
     }
+}
+
+function renderBonusFallback(el) {
+    el.innerHTML = `
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+            <span class="text-xl">🎲</span>
+            <span class="text-sm font-black font-mono text-white/40">20,000</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+            <span class="text-xl">💎</span>
+            <span class="text-sm font-black font-mono text-white/40">5,000</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 opacity-40">
+            <span class="text-xl">💰</span>
+            <span class="text-sm font-black font-mono text-white/40">1.0M</span>
+        </div>
+    `;
 }
 
 
@@ -3132,7 +3142,21 @@ function showDiceStatsModal() {
         elList.innerHTML = html;
     };
 
-    renderList(state.earnedDiceBreakdown || {}, listEarned, "無紀錄");
+    const aggregateBreakdown = (dataObj) => {
+        const aggregated = {};
+        for (const [key, value] of Object.entries(dataObj)) {
+            // Group archaeology rewards starting with "考古學關卡"
+            if (key.startsWith('考古學關卡')) {
+                const groupKey = '考古挖掘獎勵';
+                aggregated[groupKey] = (aggregated[groupKey] || 0) + value;
+            } else {
+                aggregated[key] = (aggregated[key] || 0) + value;
+            }
+        }
+        return aggregated;
+    };
+
+    renderList(aggregateBreakdown(state.earnedDiceBreakdown || {}), listEarned, "無紀錄");
     renderList(state.spentDiceBreakdown || {}, listSpent, "無紀錄");
 
     document.getElementById('dice-stats-modal').classList.remove('hidden');
