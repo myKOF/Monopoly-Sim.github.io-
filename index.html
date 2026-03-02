@@ -472,8 +472,12 @@
                         <h2 class="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2">
                             <span class="text-xl">🍦</span>
                             <div>
-                                <div id="collection-title" class="text-xs">收藏活動</div>
-                                <div class="text-[10px] text-gray-400 leading-none">Limited Event</div>
+                                <div id="collection-title" class="text-xs">圖標搜集</div>
+                                <div class="text-[10px] text-gray-400 leading-none flex items-center gap-1.5">
+                                    <span>LIMITED EVENT</span>
+                                    <span class="text-pink-500 font-bold bg-pink-500/10 px-1 rounded">G<span
+                                            id="collection-group-val">1</span></span>
+                                </div>
                             </div>
                         </h2>
                         <div class="flex flex-col items-end gap-1.5">
@@ -1590,15 +1594,27 @@
         <div id="collection-rewards-list"
             class="relative w-full max-w-md bg-vibe-card/95 backdrop-blur-3xl border border-white/30 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] p-6 scale-90 opacity-0 transition-all duration-300">
             <div class="flex justify-between items-center mb-6 border-b border-white/20 pb-4">
-                <div class="text-sm font-bold text-white tracking-widest uppercase flex items-center gap-3">
-                    <span class="text-2xl">🍦</span> 收藏活動全獎勵清單
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🍦</span>
+                    <div class="flex flex-col">
+                        <div class="text-sm font-bold text-white tracking-widest uppercase">收藏活動全獎勵清單</div>
+                        <div class="text-[9px] text-gray-500 uppercase tracking-tighter">Event Reward List</div>
+                    </div>
                 </div>
-                <button id="btn-close-collection-rewards" class="text-gray-500 hover:text-white transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
-                        </path>
-                    </svg>
-                </button>
+                <div class="flex items-center gap-3">
+                    <!-- Group Selector -->
+                    <select id="select-collection-group"
+                        class="bg-white/20 text-black font-bold text-[10px] px-2 py-1 rounded border border-white/20 outline-none cursor-pointer hover:bg-white/30 transition-all">
+                        <option value="1" class="text-black">Group 1</option>
+                    </select>
+                    <button id="btn-close-collection-rewards" class="text-gray-500 hover:text-white transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div id="collection-rewards-content"
                 class="flex flex-col gap-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">

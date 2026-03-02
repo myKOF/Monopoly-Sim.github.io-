@@ -315,7 +315,7 @@ let state = {
     logs: [],
     properties: [],
     extraObjects: new Set(),
-    collection: { level: 1, points: 0, totalCollected: 0, config: [], enabled: true },
+    collection: { level: 1, group: 1, points: 0, totalCollected: 0, config: [], enabled: true },
     tileVisits: [],
     tournament: {
         participants: [], // {id, name, score, target, valueRange:[], cdRange:[], nextUpdate: 0}
@@ -393,6 +393,7 @@ const ui = {
     colBar: document.getElementById('collection-bar'),
     colReward: document.getElementById('collection-reward-desc'),
     colRewardsToggle: document.getElementById('collection-rewards-toggle'),
+    colGroupVal: document.getElementById('collection-group-val'),
     btnColToggle: document.getElementById('btn-collection-toggle'),
     colToggleDot: document.getElementById('collection-toggle-dot'),
     colToggleText: document.getElementById('collection-toggle-text'),
@@ -400,6 +401,7 @@ const ui = {
     colRewardsBackdrop: document.getElementById('collection-rewards-backdrop'),
     colRewardsList: document.getElementById('collection-rewards-list'),
     colRewardsContent: document.getElementById('collection-rewards-content'),
+    selectColGroup: document.getElementById('select-collection-group'),
     btnCloseColRewards: document.getElementById('btn-close-collection-rewards'),
     btnStop: document.getElementById('btn-stop'),
     autoProgress: document.getElementById('auto-progress'),
@@ -607,8 +609,8 @@ const FALLBACK_DATA = [
     { id: 13, icon: '⛓️', type: 'JAIL', name: '監獄', price: 0, color: 'text-gray-500', probability: 1 },
 ];
 
-const DEFAULT_COLLECTION_CSV = `level,required_points,reward_gold,reward_desc
-1,3,1000,初級`;
+const DEFAULT_COLLECTION_CSV = `group,level,required_points,reward_gold,reward_gem,reward_dice,reward_desc
+1,1,3,1000,,,初級`;
 
 // Worker Message Listener
 function workerMessageHandler(e) {
@@ -1851,9 +1853,10 @@ function parseCollectionCSV(text) {
     const lines = text.trim().split('\n');
     return lines.slice(1).map(line => {
         const cols = line.trim().split(',');
-        if (cols.length < 6) return null; // Update column check for 6 fields
-        const [level, required, gold, gem, dice, desc] = cols;
+        if (cols.length < 7) return null;
+        const [group, level, required, gold, gem, dice, desc] = cols;
         return {
+            group: parseInt(group),
             level: parseInt(level),
             required: parseInt(required),
             gold: parseInt(gold) || 0,
@@ -2056,12 +2059,27 @@ function renderBoard() {
 function renderCollectionRewardsList() {
     if (!state.collection || !state.collection.config || !ui.colRewardsContent) return;
 
-    ui.colRewardsContent.innerHTML = state.collection.config.map(item => {
+    // Populate group selector if it's the first render or groups changed
+    if (ui.selectColGroup) {
+        const uniqueGroups = [...new Set(state.collection.config.map(c => c.group))].sort((a, b) => a - b);
+        const currentOptions = Array.from(ui.selectColGroup.options).map(o => parseInt(o.value));
+        const groupsChanged = uniqueGroups.length !== currentOptions.length || uniqueGroups.some((g, i) => g !== currentOptions[i]);
+
+        if (groupsChanged) {
+            ui.selectColGroup.innerHTML = uniqueGroups.map(g => `<option value="${g}" class="text-black">Group ${g}</option>`).join('');
+        }
+        ui.selectColGroup.value = state.collection.group || 1;
+    }
+
+    // Filter by current group
+    const currentGroupRewards = state.collection.config.filter(c => c.group === (state.collection.group || 1));
+
+    ui.colRewardsContent.innerHTML = currentGroupRewards.map(item => {
         const isCompleted = item.level < state.collection.level;
         const isCurrent = item.level === state.collection.level;
 
         let rewards = [];
-        if (item.coin > 0) rewards.push(`💰${item.coin.toLocaleString()}`);
+        if (item.gold > 0) rewards.push(`💰${item.gold.toLocaleString()}`);
         if (item.gem > 0) rewards.push(`💎${item.gem.toLocaleString()}`);
         if (item.dice > 0) rewards.push(`🎲${item.dice.toLocaleString()}`);
 
@@ -2642,7 +2660,7 @@ function updateUI() {
     }
 
     const currentConfig = state.collection && state.collection.config
-        ? state.collection.config.find(c => c.level === state.collection.level)
+        ? state.collection.config.find(c => c.level === state.collection.level && c.group === state.collection.group)
         : null;
     if (currentConfig) {
         if (ui.colLevel) ui.colLevel.textContent = state.collection.level;
@@ -2651,6 +2669,14 @@ function updateUI() {
         if (ui.colBar) {
             const pct = Math.min((state.collection.points / currentConfig.required) * 100, 100);
             ui.colBar.style.width = `${pct}%`;
+        }
+        if (ui.colGroupVal) {
+            ui.colGroupVal.textContent = state.collection.group || 1;
+        }
+
+        // Auto Refresh Rewards List if modal is open
+        if (ui.colRewardsModal && !ui.colRewardsModal.classList.contains('hidden')) {
+            renderCollectionRewardsList();
         }
 
         let rewardText = [];
@@ -3672,6 +3698,15 @@ if (ui.colRewardsToggle && ui.colRewardsModal) {
         e.stopPropagation();
         hideModal();
     });
+
+    if (ui.selectColGroup) {
+        ui.selectColGroup.addEventListener('change', (e) => {
+            const gid = parseInt(e.target.value);
+            if (!isNaN(gid)) {
+                worker.postMessage({ type: 'SWITCH_COLLECTION_GROUP', payload: { group: gid } });
+            }
+        });
+    }
 }
 
 // Close dropdowns on outside click (for other dropdowns if any, but modal is handled above)

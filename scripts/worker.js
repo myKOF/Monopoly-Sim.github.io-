@@ -11,7 +11,7 @@ let state = {
     logs: [],
     properties: [], // Receives from Main Thread
     extraObjects: new Set(),
-    collection: { level: 1, points: 0, totalCollected: 0, config: [], enabled: true },
+    collection: { level: 1, group: 1, points: 0, totalCollected: 0, config: [], enabled: true },
     tileVisits: new Array(BOARD_SIZE).fill(0),
     isRunning: false,
     autoRollTimer: null,
@@ -595,6 +595,13 @@ self.onmessage = function (e) {
             }
             sendUpdate();
             break;
+        case 'SWITCH_COLLECTION_GROUP':
+            state.collection.group = payload.group || 1;
+            state.collection.level = 1;
+            state.collection.points = 0;
+            state.collection.totalCollected = 0; // Reset as requested
+            sendUpdate();
+            break;
     }
 };
 
@@ -1165,7 +1172,7 @@ function checkCollectionEvent(pos) {
         // [NEW] Respawn Logic
         respawnItem();
 
-        let currentConfig = state.collection.config.find(c => c.level === state.collection.level);
+        let currentConfig = state.collection.config.find(c => c.level === state.collection.level && c.group === state.collection.group);
 
         // Loop for multi-level up
         while (currentConfig && currentConfig.required > 0 && state.collection.points >= currentConfig.required) {
@@ -1197,7 +1204,7 @@ function checkCollectionEvent(pos) {
             }
 
             // Update config for next iteration
-            currentConfig = state.collection.config.find(c => c.level === state.collection.level);
+            currentConfig = state.collection.config.find(c => c.level === state.collection.level && c.group === state.collection.group);
         }
     }
 }
