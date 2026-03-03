@@ -664,6 +664,9 @@ function workerMessageHandler(e) {
             state.position = payload.position;
             updateDynamicUI(); updateUI(); updateStatsUI();
         } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
+            // [FIX] Overlap guard: Prevent starting a new animation if one is already running
+            if (isAnimating) return;
+
             setIsAnimating(true);
             animateMove(previousPosition, steps, payload.position, () => {
                 state.position = payload.position;
@@ -677,8 +680,14 @@ function workerMessageHandler(e) {
                 }
             });
         } else {
-            state.position = payload.position;
-            updateDynamicUI(); updateUI(); updateStatsUI();
+            // [FIX] Only sync position if NOT currently animating a move
+            // This prevents background activities (like archaeology digs) from jumping the player to the destination
+            if (!isAnimating) {
+                state.position = payload.position;
+                updateDynamicUI();
+                updateStatsUI();
+            }
+            updateUI(); // Keep updating general stats (money, etc)
         }
     }
 
@@ -713,7 +722,7 @@ function workerMessageHandler(e) {
             console.log(`[Archaeology] Auto Replaying. Remaining: ${repeatCount - 1}`);
             // Restart the auto-loop once the worker has reset the state
             if (isArchaeologyAuto) {
-                setTimeout(runArchaeologyAuto, 500);
+                reliableSetTimeout(runArchaeologyAuto, 500);
             }
         }
     }
@@ -811,30 +820,28 @@ function updateLogs(newLogs) {
     // Sort by ID ascending (Oldest -> Newest) so we append to bottom
     logsToRender.sort((a, b) => a.id - b.id);
 
+    const fragment = document.createDocumentFragment();
     logsToRender.forEach(data => {
         lastLogId = Math.max(lastLogId, data.id);
-
         const div = document.createElement('div');
         div.className = 'flex gap-2 log-entry-enter hover:bg-white/5 p-1 rounded';
-
         let color = 'text-gray-400';
         if (data.delta_gold > 0) color = 'text-neon-green';
         if (data.delta_gold < 0) color = 'text-neon-pink';
         if (data.event === "EVENT_REWARD") color = 'text-yellow-400 font-bold';
-
         div.innerHTML = `
             <span class="text-gray-600 w-6">#${data.turn}</span>
             <span class="flex-1 text-gray-300 truncate">${data.detail}</span>
             <span class="${color} font-bold text-xs">${data.delta_gold !== 0 ? (data.delta_gold > 0 ? '+' : '') + data.delta_gold : ''}</span>
         `;
-        if (ui.logContainer) {
-            ui.logContainer.appendChild(div);
-            // [OPTIMIZATION] Limit the number of logs in the DOM
-            if (ui.logContainer.children.length > 100) {
-                ui.logContainer.removeChild(ui.logContainer.firstElementChild);
-            }
-        }
+        fragment.appendChild(div);
     });
+    if (ui.logContainer) {
+        ui.logContainer.appendChild(fragment);
+        while (ui.logContainer.children.length > 100) {
+            ui.logContainer.removeChild(ui.logContainer.firstElementChild);
+        }
+    }
 }
 
 
@@ -1402,12 +1409,19 @@ function renderRoulette() {
 function updateRouletteUI() {
     if (!state.roulette) return;
 
-    uiRouletteLevel.textContent = `Lv.${state.roulette.level}`;
+    // Check visibility
+    const isVisible = uiRouletteModal && !uiRouletteModal.classList.contains('hidden');
+
+    if (isVisible || isSpinning) {
+        uiRouletteLevel.textContent = `Lv.${state.roulette.level}`;
+    }
 
     // Only update the input value if we aren't currently typing in it, OR if it's spinning (force update)
     if (document.activeElement !== uiRouletteTokens || isSpinning) {
         uiRouletteTokens.value = state.roulette.tokens;
     }
+
+    if (!isVisible && !isSpinning) return; // Skip heavy rendering if hidden and not animating
 
     // Integral UI
     renderRouletteIntegralUI();
@@ -2018,7 +2032,23 @@ function initBoard() {
     }
 }
 
+let lastDynamicState = { pos: -1, objects: '', thief: -1 };
+
 function updateDynamicUI() {
+    const currentState = {
+        pos: state.position,
+        objects: Array.from(state.extraObjects).join(','),
+        thief: typeof thiefVisualPos !== 'undefined' ? thiefVisualPos : -1
+    };
+
+    // Optimization: Skip if nothing on the board changed
+    if (currentState.pos === lastDynamicState.pos &&
+        currentState.objects === lastDynamicState.objects &&
+        currentState.thief === lastDynamicState.thief) {
+        return;
+    }
+    lastDynamicState = currentState;
+
     updatePlayerPosition(state.position);
 
     document.querySelectorAll('.tile-extra-badge').forEach(el => el.remove());
@@ -2399,9 +2429,14 @@ function renderTravelerEvent() {
     const te = state.travelEvent;
     if (!te) return;
 
+    // Check visibility
+    const isVisible = ui.modalTraveler && !ui.modalTraveler.classList.contains('hidden');
+
     if (ui.travelerHeaderGold) ui.travelerHeaderGold.textContent = state.money.toLocaleString();
     if (ui.travelerHeaderGem) ui.travelerHeaderGem.textContent = (state.gems || 0).toLocaleString();
     if (ui.travelerHeaderDice) ui.travelerHeaderDice.textContent = (state.dice || 0).toLocaleString();
+
+    if (!isVisible) return; // Skip heavy rendering if hidden
 
     const displayLevel = Math.min(te.level, 20);
     if (ui.travelerLevelDisp) ui.travelerLevelDisp.textContent = `STAGE ${displayLevel}`;
@@ -3205,13 +3240,18 @@ function update2048PreviewBar() {
 function render2048() {
     if (!state.game2048) return;
 
+    // Check visibility
+    const isVisible = ui.modal2048 && !ui.modal2048.classList.contains('hidden');
+
     const { grid, score, maxUnlockedLevel, stamina, nextStaminaTick, maxStamina, isGameOver } = state.game2048;
 
-    // Update Scores & Stamina
-    ui.disp2048Score.textContent = score;
-    ui.disp2048Max.textContent = maxUnlockedLevel;
-    ui.stmCurrent.textContent = stamina;
-    ui.stmMaxDisp.textContent = maxStamina || 100;
+    // Update Scores & Stamina (Always sync these for header stats if any, but 2048 stats are mostly modal-only)
+    if (ui.disp2048Score) ui.disp2048Score.textContent = score;
+    if (ui.disp2048Max) ui.disp2048Max.textContent = maxUnlockedLevel;
+    if (ui.stmCurrent) ui.stmCurrent.textContent = stamina;
+    if (ui.stmMaxDisp) ui.stmMaxDisp.textContent = maxStamina || 100;
+
+    if (!isVisible) return; // Skip heavy grid rendering if hidden
 
     const pct = Math.min(100, (stamina / (maxStamina || 100)) * 100);
     ui.stmBar.style.width = `${pct}%`;
@@ -3930,23 +3970,49 @@ function renderVolcanoList() {
     let html = '';
     state.volcano.config.forEach(cfg => {
         const isCurrent = cfg.level === state.volcano.level;
+        const isCompleted = cfg.level < state.volcano.level;
+
+        let bgColorClass = 'bg-white/5 border-white/10';
+        let nameColorClass = 'text-gray-300';
+        let rewardColorClass = 'text-yellow-500';
+        let statusText = '';
+        let opacityClass = 'opacity-100';
+
+        if (isCurrent) {
+            bgColorClass = 'bg-red-500/10 border-red-500/50';
+            nameColorClass = 'text-red-400 font-black';
+            statusText = '<span class="ml-1 text-[10px] text-red-500 font-black tracking-widest uppercase">(當前)</span>';
+        } else if (isCompleted) {
+            bgColorClass = 'bg-gray-800/20 border-gray-600/20';
+            nameColorClass = 'text-gray-500';
+            rewardColorClass = 'text-gray-600';
+            statusText = '<span class="ml-1 text-[10px] text-neon-green font-black tracking-widest uppercase">(已完成)</span>';
+            opacityClass = 'opacity-60 grayscale-[0.5]';
+        }
+
         const rewards = [];
         if (cfg.reward_gold) rewards.push(`💰${cfg.reward_gold}`);
         if (cfg.reward_gem) rewards.push(`💎${cfg.reward_gem}`);
         if (cfg.reward_dice) rewards.push(`🎲${cfg.reward_dice}`);
 
         html += `
-            <div class="flex items-center justify-between p-3 rounded-lg border ${isCurrent ? 'bg-red-500/10 border-red-500/50' : 'bg-white/5 border-white/10'}">
+            <div class="flex items-center justify-between p-3 rounded-xl border ${bgColorClass} ${opacityClass} transition-all duration-300">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-red-600/20 flex items-center justify-center text-xl border border-red-500/30">👤</div>
+                    <div class="w-10 h-10 rounded-full ${isCompleted ? 'bg-gray-800/40 border-gray-700/50' : 'bg-red-600/20 border-red-500/30'} flex items-center justify-center text-xl border relative">
+                        👤
+                        ${isCompleted ? '<div class="absolute -top-1 -right-1 bg-neon-green text-black text-[8px] w-4 h-4 flex items-center justify-center rounded-full shadow-lg font-black">✓</div>' : ''}
+                    </div>
                     <div>
-                        <div class="text-sm font-bold ${isCurrent ? 'text-red-400' : 'text-gray-300'}">Lv.${cfg.level} 匪徒 ${isCurrent ? '(當前)' : ''}</div>
-                        <div class="text-[10px] text-gray-500">生命值: ${cfg.hp} | ${cfg.reward_desc}</div>
+                        <div class="flex items-center">
+                            <div class="text-sm font-bold ${nameColorClass}">Lv.${cfg.level} 匪徒</div>
+                            ${statusText}
+                        </div>
+                        <div class="text-[10px] text-gray-500 font-medium">生命值: ${cfg.hp} | ${cfg.reward_desc}</div>
                     </div>
                 </div>
                 <div class="text-right">
-                    <div class="text-[10px] text-gray-500 mb-1 uppercase tracking-tighter">擊敗獎勵</div>
-                    <div class="text-xs font-bold text-yellow-500">${rewards.join(' ')}</div>
+                    <div class="text-[10px] text-gray-600 mb-0.5 uppercase tracking-tighter font-black">擊敗獎勵</div>
+                    <div class="text-xs font-black ${rewardColorClass}">${rewards.join(' ')}</div>
                 </div>
             </div>
         `;
@@ -3992,6 +4058,12 @@ window.antigravityNotify = function (isFinal) {
 function updateScratchUI() {
     const sc = state.scratchCard;
     if (!sc) return;
+
+    const isVisible = ui.modalScratch && !ui.modalScratch.classList.contains('hidden');
+
+    if (ui.scratchSideTokens) ui.scratchSideTokens.textContent = sc.tokens;
+
+    if (!isVisible) return; // Skip heavy rendering if hidden
 
     if (ui.scratchLevel) ui.scratchLevel.textContent = sc.level;
     if (ui.scratchPoints) ui.scratchPoints.textContent = sc.points;
@@ -4468,7 +4540,28 @@ function renderArchaeology() {
     const arch = state.archaeology;
     if (!arch) return;
 
+    const isModalVisible = ui.modalArchaeology && !ui.modalArchaeology.classList.contains('hidden');
+
     if (ui.archaeologyLevelDisp) ui.archaeologyLevelDisp.textContent = arch.level;
+
+    // Update Sidebar Panel Status [NEW]
+    const archPanel = document.getElementById('activity-archaeology-panel');
+    if (archPanel) {
+        const titleDiv = archPanel.querySelector('h2 > div > div');
+        if (titleDiv) {
+            if (isArchaeologyAuto) {
+                if (!titleDiv.querySelector('.auto-dot')) {
+                    titleDiv.innerHTML += ' <span class="auto-dot inline-block w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse ml-1"></span>';
+                }
+            } else {
+                const dot = titleDiv.querySelector('.auto-dot');
+                if (dot) dot.remove();
+            }
+        }
+    }
+
+    // If modal is not visible, skip heavy rendering (grid, targets, progress bar)
+    if (!isModalVisible) return;
 
     // Highlight active group button
     document.querySelectorAll('.group-btn').forEach(btn => {
@@ -4788,17 +4881,6 @@ if (ui.btnArchaeologyOpen) {
 if (ui.btnCloseArchaeology) {
     ui.btnCloseArchaeology.addEventListener('click', () => {
         if (ui.modalArchaeology) {
-            // Stop action and update UI state immediately
-            if (isArchaeologyAuto) {
-                isArchaeologyAuto = false; // Optimistic local update
-                if (archaeologyAutoTimer) {
-                    clearTimeout(archaeologyAutoTimer);
-                    archaeologyAutoTimer = null;
-                }
-                renderArchaeology();
-                worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
-            }
-
             ui.modalArchaeology.classList.remove('opacity-100');
             const content = ui.modalArchaeology.querySelector('.archaeology-modal-content');
             if (content) {
@@ -4824,7 +4906,7 @@ if (ui.btnArchaeologyAuto) {
             runArchaeologyAuto();
         } else {
             if (archaeologyAutoTimer) {
-                clearTimeout(archaeologyAutoTimer);
+                reliableClearTimeout(archaeologyAutoTimer);
                 archaeologyAutoTimer = null;
             }
         }
@@ -4839,7 +4921,7 @@ function runArchaeologyAuto() {
     // Stop if finished or transitioning
     if (!arch || arch.isFinished) {
         if (archaeologyAutoTimer) {
-            clearTimeout(archaeologyAutoTimer);
+            reliableClearTimeout(archaeologyAutoTimer);
             archaeologyAutoTimer = null;
         }
         return;
@@ -4847,7 +4929,7 @@ function runArchaeologyAuto() {
 
     if (arch.isTransitioning) {
         // Wait and check again later if still transitioning
-        archaeologyAutoTimer = setTimeout(runArchaeologyAuto, 200);
+        archaeologyAutoTimer = reliableSetTimeout(runArchaeologyAuto, 200);
         return;
     }
 
@@ -4863,7 +4945,7 @@ function runArchaeologyAuto() {
 
     // Frequency logic mirroring Scratch Card
     const delay = Math.max(10, Math.round(500 / archaeologySpeed));
-    archaeologyAutoTimer = setTimeout(runArchaeologyAuto, delay);
+    archaeologyAutoTimer = reliableSetTimeout(runArchaeologyAuto, delay);
 }
 
 if (ui.archaeologySpeed) {
@@ -4910,10 +4992,15 @@ function updateMagicPlantUI() {
     const mp = state.magicPlant;
     if (!mp) return;
 
-    if (ui.magicLevelDisp) ui.magicLevelDisp.textContent = mp.level;
+    const isVisible = ui.modalMagicPlant && !ui.modalMagicPlant.classList.contains('hidden');
+
     if (ui.magicHeaderGold) ui.magicHeaderGold.textContent = state.money.toLocaleString();
     if (ui.magicHeaderGem) ui.magicHeaderGem.textContent = state.gems.toLocaleString();
     if (ui.magicHeaderDice) ui.magicHeaderDice.textContent = state.dice.toLocaleString();
+
+    if (!isVisible) return; // Skip heavy rendering if hidden
+
+    if (ui.magicLevelDisp) ui.magicLevelDisp.textContent = mp.level;
     if (ui.magicTokens) ui.magicTokens.value = mp.tokens;
 
     // Stats

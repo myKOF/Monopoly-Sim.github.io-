@@ -106,7 +106,8 @@ let state = {
             totalEarnedGem: 0
         },
         availableFruits: []
-    }
+    },
+    lastUpdateTimestamp: 0 // [NEW] For throttling
 };
 
 // ... (Existing message handling) ...
@@ -1042,7 +1043,7 @@ function execTurn(isAuto, silent = false) {
     checkVolcanoCollision(prevPos, steps);
 
     // Send Update to Main Thread
-    if (!silent) sendUpdate(steps, isAuto);
+    if (!silent) sendUpdate(steps, isAuto, true); // Force update for player moves
 }
 
 function addMoney(amount, reason, desc) {
@@ -1280,7 +1281,15 @@ function generateExtraObjects(count) {
     sendUpdate();
 }
 
-function sendUpdate(lastDiceRoll = 0, isAuto = false) {
+function sendUpdate(lastDiceRoll = 0, isAuto = false, force = false) {
+    const now = Date.now();
+    // Throttle frequency: max ~20 TPS (50ms) to avoid choking main thread during high-speed activities
+    // Force used for player moves, level completions, etc.
+    if (!force && (now - (state.lastUpdateTimestamp || 0)) < 50) {
+        return;
+    }
+    state.lastUpdateTimestamp = now;
+
     const payload = {
         turn: state.turn,
         position: state.position,
@@ -2449,7 +2458,7 @@ function handleArchaeologyDig(index) {
         }
     }
 
-    sendUpdate();
+    sendUpdate(0, false, false);
 }
 
 function processArchaeologyLevelComplete() {
@@ -2477,7 +2486,7 @@ function processArchaeologyLevelComplete() {
             initArchaeologyStage();
             arch.isTransitioning = false;
             state.archTransitionTimer = null;
-            sendUpdate();
+            sendUpdate(0, wasAuto, true);
             // Next step will be triggered by main thread's auto loop detecting !isTransitioning
         }, delay);
     } else {
@@ -2488,7 +2497,7 @@ function processArchaeologyLevelComplete() {
         self.postMessage({ type: 'ARCHAEOLOGY_COMPLETE' });
     }
 
-    sendUpdate();
+    sendUpdate(0, wasAuto, true);
 }
 
 function handleArchaeologyAutoStep() {
@@ -2503,7 +2512,7 @@ function handleArchaeologyAutoStep() {
     if (!arch.autoDig || arch.isTransitioning || arch.isFinished) return;
     if (arch.tokens <= 0) {
         arch.autoDig = false;
-        sendUpdate();
+        sendUpdate(0, false, true);
         return;
     }
 
@@ -2534,7 +2543,7 @@ function handleArchaeologyAutoStep() {
         const remainingItems = arch.targetItems.filter(item => !item.isFound);
         if (remainingItems.length === 0) {
             arch.autoDig = false;
-            sendUpdate();
+            sendUpdate(0, false, true);
             return;
         }
 
