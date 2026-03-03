@@ -658,36 +658,53 @@ function workerMessageHandler(e) {
 
         updateLogs(payload.logs);
 
+        // Move Sync Logic
+        isTurnPending = false;
+        if (steps > 0 && ui.diceVisual) {
+            ui.diceVisual.textContent = steps;
+        }
+
         const isFastMode = ui.btnFast && ui.btnFast.disabled === true;
 
         if (isFastMode) {
             state.position = payload.position;
             updateDynamicUI(); updateUI(); updateStatsUI();
-        } else if ((isAuto && isAutoRunning) || (!isAuto && steps > 0)) {
-            // [FIX] Overlap guard: Prevent starting a new animation if one is already running
-            if (isAnimating) return;
+        } else if (steps > 0) {
+            // [FIX] If already animating, we must NOT start a new one, 
+            // but we MUST sync the physical state eventually. 
+            // For now, if an overlap occurs, teleport to the newest state to regain sync.
+            if (isAnimating) {
+                console.warn("Animation Overlap Detected! Syncing position directly.");
+                state.position = payload.position;
+                updateDynamicUI(); updatePlayerPosition(state.position); updateStatsUI();
+                return;
+            }
 
             setIsAnimating(true);
             animateMove(previousPosition, steps, payload.position, () => {
                 state.position = payload.position;
                 setIsAnimating(false);
                 updateStatsUI(); updateUI(); updateDynamicUI(); updatePlayerPosition(state.position);
+
                 if (state.volcano && thiefVisualPos !== -1 && state.volcano.position !== thiefVisualPos && !thiefAnimTimer) {
                     animateThief(thiefVisualPos, state.volcano.position);
                 }
-                if (isAutoRunning) {
-                    reliableSetTimeout(() => { worker.postMessage({ type: 'NEXT_TURN' }); }, systemConfig.Spin_CD * 1000);
+
+                // [FIX] Only trigger NEXT_TURN if it was an auto turn AND we are in auto mode
+                if (isAuto && isAutoRunning) {
+                    reliableSetTimeout(() => {
+                        worker.postMessage({ type: 'NEXT_TURN' });
+                    }, systemConfig.Spin_CD * 1000);
                 }
             });
         } else {
-            // [FIX] Only sync position if NOT currently animating a move
-            // This prevents background activities (like archaeology digs) from jumping the player to the destination
+            // Background update (steps == 0)
             if (!isAnimating) {
                 state.position = payload.position;
                 updateDynamicUI();
                 updateStatsUI();
             }
-            updateUI(); // Keep updating general stats (money, etc)
+            updateUI();
         }
     }
 
@@ -724,6 +741,11 @@ function workerMessageHandler(e) {
             if (isArchaeologyAuto) {
                 reliableSetTimeout(runArchaeologyAuto, 500);
             }
+        } else {
+            // [FIX] Ensure UI state matches when auto finishes naturally
+            isArchaeologyAuto = false;
+            worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
+            renderArchaeology();
         }
     }
 
@@ -754,13 +776,14 @@ function workerMessageHandler(e) {
 }
 
 let isAnimating = false;
+let isTurnPending = false; // New: prevent queuing multiple rolls before worker responds
 let isAutoRunning = false;
 let isFastSimulating = false;
 let isPartnerSpeedUp = false; // [NEW] Track speed up state
 let isScratchAuto = false; // [NEW] Track scratch card auto state
 function setIsAnimating(val) {
     isAnimating = val;
-    ui.btnRoll.disabled = val;
+    ui.btnRoll.disabled = val || isTurnPending;
     // ui.btnGenExtra.disabled = val; 
 }
 
@@ -1192,7 +1215,10 @@ ui.btnRoll.addEventListener('click', () => {
         ui.btnStop.click();
         return;
     }
-    if (isAnimating) return; // [FIX] Prevent re-entry
+    if (isAnimating || isTurnPending) return; // [FIX] Proactive Lock
+
+    isTurnPending = true;
+    setIsAnimating(true); // Proactively disable button
     worker.postMessage({ type: 'EXEC_TURN' });
 });
 
@@ -2049,7 +2075,12 @@ function updateDynamicUI() {
     }
     lastDynamicState = currentState;
 
-    updatePlayerPosition(state.position);
+    // [FIX] Guard: Do not force player position during an active animation
+    // This prevents background updates from "snapping" the player icon 
+    // back to the start tile mid-animation.
+    if (!isAnimating) {
+        updatePlayerPosition(state.position);
+    }
 
     document.querySelectorAll('.tile-extra-badge').forEach(el => el.remove());
     document.querySelectorAll('.ring-2.ring-pink-500').forEach(el => el.classList.remove('ring-2', 'ring-pink-500'));
@@ -2422,7 +2453,7 @@ function runTravelerAutoLoop() {
         }
     }
 
-    travelerAutoTimer = setTimeout(runTravelerAutoLoop, delay);
+    travelerAutoTimer = reliableSetTimeout(runTravelerAutoLoop, delay);
 }
 
 function renderTravelerEvent() {
@@ -3603,7 +3634,7 @@ function start2048Auto() {
     const speed = parseInt(ui.select2048Speed.value) || 2;
     const intervalMs = Math.floor(1000 / speed);
 
-    auto2048Interval = setInterval(() => {
+    const tick = () => {
         if (!is2048Auto || !state.game2048 || state.game2048.stamina < 1 || state.game2048.isGameOver) {
             stop2048Auto();
             return;
@@ -3614,13 +3645,16 @@ function start2048Auto() {
 
         // Cycle clockwise
         auto2048DirIdx = (auto2048DirIdx + 1) % 4;
-    }, intervalMs);
+        auto2048Interval = reliableSetTimeout(tick, intervalMs);
+    };
+
+    auto2048Interval = reliableSetTimeout(tick, intervalMs);
 }
 
 function stop2048Auto() {
     is2048Auto = false;
     if (auto2048Interval) {
-        clearInterval(auto2048Interval);
+        reliableClearTimeout(auto2048Interval);
         auto2048Interval = null;
     }
     ui.btn2048Auto.classList.remove('bg-emerald-500/20', 'border-emerald-500', 'text-emerald-400', 'font-bold');
@@ -4280,12 +4314,12 @@ function runScratchAuto() {
     if (!isScratchAuto) return;
     const sc = state.scratchCard;
     if (!sc || !sc.currentCard) {
-        scratchAutoTimer = setTimeout(runScratchAuto, 1000);
+        scratchAutoTimer = reliableSetTimeout(runScratchAuto, 1000);
         return;
     }
 
     if (sc.currentCard.isCompleted) {
-        scratchAutoTimer = setTimeout(() => {
+        scratchAutoTimer = reliableSetTimeout(() => {
             worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: -1 } });
             runScratchAuto();
         }, Math.max(10, Math.round(1500 / scratchSpeed)));
@@ -4298,7 +4332,7 @@ function runScratchAuto() {
             const rand = hidden[Math.floor(Math.random() * hidden.length)];
             worker.postMessage({ type: 'SCRATCH_CARD_PICK', payload: { index: rand } });
         }
-        scratchAutoTimer = setTimeout(runScratchAuto, Math.max(5, Math.round(500 / scratchSpeed)));
+        scratchAutoTimer = reliableSetTimeout(runScratchAuto, Math.max(5, Math.round(500 / scratchSpeed)));
     }
 }
 
@@ -4575,8 +4609,10 @@ function renderArchaeology() {
         }
     });
 
-    // Update tokens
-    if (ui.archaeologyTokens) ui.archaeologyTokens.value = arch.tokens;
+    // Update tokens (Only if not focused, to allow manual editing)
+    if (ui.archaeologyTokens && document.activeElement !== ui.archaeologyTokens) {
+        ui.archaeologyTokens.value = arch.tokens;
+    }
 
     // Update stats
     if (ui.statArchaeologySpent) ui.statArchaeologySpent.textContent = (arch.stats.totalTokensUsed || 0).toLocaleString();
@@ -4923,6 +4959,11 @@ function runArchaeologyAuto() {
         if (archaeologyAutoTimer) {
             reliableClearTimeout(archaeologyAutoTimer);
             archaeologyAutoTimer = null;
+        }
+        // [FIX] Sync state if it finished in the background
+        if (arch && arch.isFinished) {
+            isArchaeologyAuto = false;
+            renderArchaeology();
         }
         return;
     }

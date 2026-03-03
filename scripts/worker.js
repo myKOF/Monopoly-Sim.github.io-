@@ -543,7 +543,7 @@ self.onmessage = function (e) {
             state.archaeology.level = 1;
             state.archaeology.foundItemsCount = 0;
             state.archaeology.isFinished = false;
-            state.archaeology.tokens = 1000;
+            // [FIX] No longer resetting tokens to 1000 here to keep actual game state
             initArchaeologyStage();
             sendUpdate();
             // Automatically continue if autoDig was on
