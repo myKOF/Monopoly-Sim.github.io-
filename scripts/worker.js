@@ -543,13 +543,10 @@ self.onmessage = function (e) {
             state.archaeology.level = 1;
             state.archaeology.foundItemsCount = 0;
             state.archaeology.isFinished = false;
+            state.archaeology.isTransitioning = false; // [FIX] Ensure transition is cleared
             // [FIX] No longer resetting tokens to 1000 here to keep actual game state
             initArchaeologyStage();
-            sendUpdate();
-            // Automatically continue if autoDig was on
-            if (state.archaeology.autoDig) {
-                // The auto-loop is handled by the main thread in script.js
-            }
+            sendUpdate(0, state.archaeology.autoDig, true); // Force update to sync UI
             break;
         case 'ARCHAEOLOGY_RESET':
             // Full manual reset
@@ -2458,7 +2455,7 @@ function handleArchaeologyDig(index) {
         }
     }
 
-    sendUpdate(0, false, false);
+    sendUpdate(0, arch.autoDig, false);
 }
 
 function processArchaeologyLevelComplete() {
@@ -2490,11 +2487,17 @@ function processArchaeologyLevelComplete() {
             // Next step will be triggered by main thread's auto loop detecting !isTransitioning
         }, delay);
     } else {
-        // No more levels in this group - Hard Stop
+        // [FIX] CRITICAL: sendUpdate MUST happen BEFORE the completion message 
+        // to ensure the main thread has the latest 'isFinished: true' state 
+        // before it attempts a restart.
         arch.isFinished = true;
         arch.isTransitioning = false;
+        
+        sendUpdate(0, wasAuto, true);
+        
         // DO NOT reset autoDig here, let the UI decide if it wants to restart
         self.postMessage({ type: 'ARCHAEOLOGY_COMPLETE' });
+        return; // Avoid the second sendUpdate below
     }
 
     sendUpdate(0, wasAuto, true);

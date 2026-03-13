@@ -730,19 +730,34 @@ function workerMessageHandler(e) {
     if (type === 'ARCHAEOLOGY_COMPLETE') {
         const repeatInput = ui.archaeologyRepeatInput;
         const repeatCount = repeatInput ? parseInt(repeatInput.value) : 1;
-        const isAuto = state.archaeology && state.archaeology.autoDig;
-
-        if (isAuto && repeatCount > 1) {
-            // Auto Replay ONLY when AUTO is on
+        
+        if (isArchaeologyAuto && repeatCount > 1) {
+            // Decrement repeat count
             if (repeatInput) repeatInput.value = repeatCount - 1;
+            
+            // [FIX] Explicitly reset finished state locally to bridge the sync gap
+            state.archaeology.isFinished = false;
+            renderArchaeology();
+
             worker.postMessage({ type: 'ARCHAEOLOGY_RESTART' });
-            console.log(`[Archaeology] Auto Replaying. Remaining: ${repeatCount - 1}`);
-            // Restart the auto-loop once the worker has reset the state
-            if (isArchaeologyAuto) {
-                reliableSetTimeout(runArchaeologyAuto, 500);
-            }
+            
+            // Add a clear system log
+            updateLogs([{
+                turn: state.turn,
+                event: 'SYSTEM',
+                delta_gold: 0,
+                current_balance: state.money,
+                detail: `考古學活動：群組已通關，自動開啟下一輪 (剩餘次數: ${repeatCount - 1})`
+            }]);
+
+            // Re-trigger the auto loop after a slightly longer reset delay
+            reliableSetTimeout(() => {
+                if (isArchaeologyAuto) {
+                    runArchaeologyAuto();
+                }
+            }, 800);
         } else {
-            // [FIX] Ensure UI state matches when auto finishes naturally
+            // Stop and Show UI if finished
             isArchaeologyAuto = false;
             worker.postMessage({ type: 'ARCHAEOLOGY_SET_AUTO', payload: { enabled: false } });
             renderArchaeology();
@@ -4956,14 +4971,15 @@ function runArchaeologyAuto() {
 
     // Stop if finished or transitioning
     if (!arch || arch.isFinished) {
+        // [FIX] If we are in AUTO and it just finished, we wait for ARCHAEOLOGY_COMPLETE 
+        // to handle the restart. Don't clear archaeologyAutoTimer yet if it's a "clean" finish.
+        if (isArchaeologyAuto && arch && arch.isFinished) {
+            return; 
+        }
+
         if (archaeologyAutoTimer) {
             reliableClearTimeout(archaeologyAutoTimer);
             archaeologyAutoTimer = null;
-        }
-        // [FIX] Sync state if it finished in the background
-        if (arch && arch.isFinished) {
-            isArchaeologyAuto = false;
-            renderArchaeology();
         }
         return;
     }
