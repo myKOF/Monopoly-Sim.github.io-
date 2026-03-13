@@ -660,11 +660,13 @@ function workerMessageHandler(e) {
 
         // Move Sync Logic
         isTurnPending = false;
+        updateButtonStates();
+
         if (steps > 0 && ui.diceVisual) {
             ui.diceVisual.textContent = steps;
         }
 
-        const isFastMode = ui.btnFast && ui.btnFast.disabled === true;
+        const isFastMode = isFastSimulating;
 
         if (isFastMode) {
             state.position = payload.position;
@@ -730,17 +732,17 @@ function workerMessageHandler(e) {
     if (type === 'ARCHAEOLOGY_COMPLETE') {
         const repeatInput = ui.archaeologyRepeatInput;
         const repeatCount = repeatInput ? parseInt(repeatInput.value) : 1;
-        
+
         if (isArchaeologyAuto && repeatCount > 1) {
             // Decrement repeat count
             if (repeatInput) repeatInput.value = repeatCount - 1;
-            
+
             // [FIX] Explicitly reset finished state locally to bridge the sync gap
             state.archaeology.isFinished = false;
             renderArchaeology();
 
             worker.postMessage({ type: 'ARCHAEOLOGY_RESTART' });
-            
+
             // Add a clear system log
             updateLogs([{
                 turn: state.turn,
@@ -796,10 +798,16 @@ let isAutoRunning = false;
 let isFastSimulating = false;
 let isPartnerSpeedUp = false; // [NEW] Track speed up state
 let isScratchAuto = false; // [NEW] Track scratch card auto state
+function updateButtonStates() {
+    const shouldDisable = isAnimating || isTurnPending || isAutoRunning || isFastSimulating;
+    if (ui.btnRoll) ui.btnRoll.disabled = shouldDisable;
+    if (ui.btnAuto) ui.btnAuto.disabled = (isAnimating || isTurnPending || isFastSimulating);
+    if (ui.btnFast) ui.btnFast.disabled = shouldDisable;
+}
+
 function setIsAnimating(val) {
     isAnimating = val;
-    ui.btnRoll.disabled = val || isTurnPending;
-    // ui.btnGenExtra.disabled = val; 
+    updateButtonStates();
 }
 
 function animateMove(startPos, steps, finalPos, onComplete) {
@@ -1233,15 +1241,19 @@ ui.btnRoll.addEventListener('click', () => {
     if (isAnimating || isTurnPending) return; // [FIX] Proactive Lock
 
     isTurnPending = true;
-    setIsAnimating(true); // Proactively disable button
+    updateButtonStates(); // Disables buttons while waiting for worker
     worker.postMessage({ type: 'EXEC_TURN' });
 });
 
 ui.btnAuto.addEventListener('click', () => {
+    if (isAnimating || isTurnPending || isFastSimulating) return;
+
     const count = parseInt(ui.autoCount.value);
     ui.btnAuto.classList.add('hidden');
     ui.btnStop.classList.remove('hidden');
     isAutoRunning = true; // [FIX] Set valid state
+    isTurnPending = true; // [FIX] Lock UI immediately
+    updateButtonStates();
     // "Watch Mode" -> START_AUTO_PLAY
     worker.postMessage({ type: 'START_AUTO_PLAY', payload: { count } });
 });
@@ -1269,9 +1281,8 @@ ui.btnGenExtra.addEventListener('click', () => {
 if (ui.btnFast) {
     ui.btnFast.addEventListener('click', () => {
         const count = parseInt(ui.autoCount.value);
-        if (ui.btnFast) ui.btnFast.disabled = true;
-        if (ui.btnAuto) ui.btnAuto.disabled = true;
-        if (ui.btnRoll) ui.btnRoll.disabled = true;
+        isFastSimulating = true; // [FIX] Set flag
+        updateButtonStates();
         worker.postMessage({ type: 'START_FAST_SIM', payload: { count } });
     });
 }
@@ -1311,14 +1322,13 @@ if (ui.btnColToggle) {
 }
 
 function endAutoRoll(finished) {
-    isAutoRunning = false; // [FIX] Ensure state is reset
+    isAutoRunning = false;
+    isTurnPending = false;
+    isFastSimulating = false; // [FIX] Reset flag
     ui.btnAuto.classList.remove('hidden');
     ui.btnStop.classList.add('hidden');
 
-    // [FIX] Re-enable buttons (in case coming from Fast Sim)
-    ui.btnFast.disabled = false;
-    ui.btnAuto.disabled = false;
-    ui.btnRoll.disabled = false;
+    updateButtonStates();
 
     if (finished) alert("Auto Roll Finished");
 }
@@ -4374,6 +4384,12 @@ if (ui.btnTravelerOpen) {
 
 if (ui.btnCloseTraveler) {
     ui.btnCloseTraveler.addEventListener('click', () => {
+        // Stop Traveler Auto if it's running
+        if (travelerAutoActive) {
+            travelerAutoActive = false;
+            handleTravelerAuto();
+        }
+
         ui.modalTraveler.classList.remove('opacity-100');
         const content = ui.modalTraveler.querySelector('.traveler-modal-content');
         if (content) {
@@ -4974,7 +4990,7 @@ function runArchaeologyAuto() {
         // [FIX] If we are in AUTO and it just finished, we wait for ARCHAEOLOGY_COMPLETE 
         // to handle the restart. Don't clear archaeologyAutoTimer yet if it's a "clean" finish.
         if (isArchaeologyAuto && arch && arch.isFinished) {
-            return; 
+            return;
         }
 
         if (archaeologyAutoTimer) {

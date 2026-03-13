@@ -244,7 +244,7 @@ self.onmessage = function (e) {
             // [NEW] 2048 Initialization
             init2048State();
 
-            sendUpdate();
+            // Removed redundant sendUpdate() here, generateExtraObjects() below will trigger a forced update.
 
             // [NEW] Auto generate icons on game start based on config
             const initialCount = (state.systemConfig && state.systemConfig.Collect_Item_Count) ? state.systemConfig.Collect_Item_Count : 10;
@@ -982,7 +982,7 @@ function execTurn(isAuto, silent = false) {
             detail: `骰子不足！ (需 ${state.multiplier}, 剩 ${state.dice})`
         });
         if (isAuto) stopAutoRoll(false);
-        sendUpdate();
+        sendUpdate(0, isAuto, true, true); // [FIX] Force update with isTurnResult=true to unlock UI
         return;
     }
 
@@ -1275,7 +1275,7 @@ function generateExtraObjects(count) {
         detail: `已生成 ${added} 個 ${uiName}`
     });
 
-    sendUpdate();
+    sendUpdate(0, false, true); // [FIX] Force update to show initial objects immediately
 }
 
 function sendUpdate(lastDiceRoll = 0, isAuto = false, force = false) {
@@ -1752,7 +1752,9 @@ function tickPartnerBots() {
 
         if (now >= tower.nextBotTick) {
             const range = parseRange(state.systemConfig.Partner_Game_PartnerValue || "{15,120}");
-            const score = Math.floor(getRandomRange(range[0], range[1]));
+            const baseScore = Math.floor(getRandomRange(range[0], range[1]));
+            const mult = state.partnerGame.multiplier || 1;
+            const score = baseScore * mult;
 
             tower.partnerScore += score;
             tower.partnerTokens += 1;
@@ -2492,9 +2494,9 @@ function processArchaeologyLevelComplete() {
         // before it attempts a restart.
         arch.isFinished = true;
         arch.isTransitioning = false;
-        
+
         sendUpdate(0, wasAuto, true);
-        
+
         // DO NOT reset autoDig here, let the UI decide if it wants to restart
         self.postMessage({ type: 'ARCHAEOLOGY_COMPLETE' });
         return; // Avoid the second sendUpdate below
