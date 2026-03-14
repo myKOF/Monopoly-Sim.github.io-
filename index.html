@@ -94,6 +94,9 @@
             <div id="board-grid"
                 class="relative bg-vibe-card/50 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl transition-all">
 
+                <!-- Particle Container -->
+                <div id="particle-container" class="absolute inset-0 pointer-events-none z-20 overflow-visible"></div>
+
                 <!-- Drag Handle (Subtle) -->
                 <button id="board-drag-handle" title="拖動旗盤"
                     class="absolute top-0 -left-8 w-4 h-4 bg-white/5 border border-white/10 rounded cursor-move z-[100] hover:bg-emerald-500/20 transition-all group flex items-center justify-center">
@@ -2497,6 +2500,7 @@
         </div>
     </div>
 
+    <script src="scripts/particle_system.js"></script>
     <script src="scripts/script.js"></script>
 </body>
 

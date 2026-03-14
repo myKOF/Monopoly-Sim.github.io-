@@ -792,6 +792,10 @@ function workerMessageHandler(e) {
     }
 }
 
+// --- Global Subsystems ---
+const thiefFireSystem = new FireParticleSystem('board-grid', 'particle-container');
+thiefFireSystem.start();
+
 let isAnimating = false;
 let isTurnPending = false; // New: prevent queuing multiple rolls before worker responds
 let isAutoRunning = false;
@@ -2030,9 +2034,12 @@ function initBoard() {
     try {
         const centerPanel = document.getElementById('center-panel');
         const dragHandle = document.getElementById('board-drag-handle');
+        const particleContainer = document.getElementById('particle-container');
         ui.board.innerHTML = '';
 
+        // Safely re-attach persistent overlay elements
         if (dragHandle) ui.board.appendChild(dragHandle);
+        if (particleContainer) ui.board.appendChild(particleContainer);
 
         if (centerPanel) {
             ui.board.appendChild(centerPanel);
@@ -3965,6 +3972,8 @@ function animateThief(fromPos, toPos) {
             // Done — update visual pos and do final board render (static badge will appear)
             thiefAnimTimer = null;
             thiefVisualPos = toPos;
+            thiefFireSystem.isEmitting = false;
+            thiefFireSystem.setTarget(null);
             requestAnimationFrame(() => renderBoard());
             return;
         }
@@ -3984,6 +3993,8 @@ function animateThief(fromPos, toPos) {
             badge.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
             badge.innerHTML = '\ud83d\udc64';
             curTile.appendChild(badge);
+            thiefFireSystem.setTarget(badge);
+            thiefFireSystem.isEmitting = true;
         }
 
         thiefAnimTimer = setTimeout(stepThief, intervalMs);
@@ -3997,6 +4008,8 @@ function animateThief(fromPos, toPos) {
         badge.className = 'thief-badge absolute -top-3 -right-3 bg-red-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] z-30 border-2 border-white animate-pulse ring-2 ring-red-400/60';
         badge.innerHTML = '\ud83d\udc64';
         startTile.appendChild(badge);
+        thiefFireSystem.setTarget(badge);
+        thiefFireSystem.isEmitting = true;
     }
 
     stepThief();
