@@ -2875,9 +2875,22 @@ function updatePlayerPosition(index) {
         marker.style.gridRow = pos.r;
         marker.style.gridColumn = pos.c;
     }
+    
+    // Clear old active styles and badges
     document.querySelectorAll('.tile-active').forEach(el => el.classList.remove('tile-active'));
+    document.querySelectorAll('.player-badge').forEach(el => el.remove());
+    
     const tile = document.getElementById(`tile-${index}`);
-    if (tile) tile.classList.add('tile-active');
+    if (tile) {
+        tile.classList.add('tile-active');
+        
+        // Add blue player badge
+        const badge = document.createElement('div');
+        // Similar to thief-badge but blue, positioned slightly differently (top-left) to avoid overlapping thief entirely
+        badge.className = 'player-badge absolute -top-3 -left-3 bg-blue-600 text-white text-xl w-9 h-9 flex items-center justify-center rounded-full shadow-[0_0_12px_rgba(59,130,246,0.8)] z-40 border-2 border-white animate-bounce-short ring-2 ring-blue-400/60';
+        badge.innerHTML = '😎'; // Cool player icon
+        tile.appendChild(badge);
+    }
 }
 
 
