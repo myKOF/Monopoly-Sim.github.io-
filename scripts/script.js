@@ -658,6 +658,11 @@ function workerMessageHandler(e) {
 
         updateLogs(payload.logs);
 
+        // [FIX] Process tournament points for this turn
+        if (payload.tournamentBonus > 0) { 
+            handleTournamentBonus(payload.tournamentBonus); 
+        }
+
         // Move Sync Logic
         isTurnPending = false;
         updateButtonStates();
@@ -2998,6 +3003,53 @@ function renderIntegralUI() {
         uiTarget.textContent = 'MAX';
         uiDesc.textContent = 'Max Level Reached';
     }
+}
+
+// [FIX] Handle Incoming Tournament Points
+function handleTournamentBonus(bonus) {
+    if (!state.tournament || !state.tournament.integralConfig || bonus <= 0) return;
+
+    // 1. Add points to player rank
+    state.tournament.playerScore += bonus;
+
+    // 2. Add points to integral progression
+    state.tournament.integral.score += bonus;
+
+    // 3. Process Level Ups
+    let config = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+    while (config && state.tournament.integral.score >= config.required) {
+        state.tournament.integral.score -= config.required;
+        state.tournament.integral.level++;
+
+        // Give Rewards
+        if (config.reward > 0) state.money += config.reward;
+        if (config.gem > 0) state.gems += config.gem;
+        if (config.dice > 0) state.dice += config.dice;
+        if (config.dice > 0) {
+            state.totalEarnedDice += config.dice;
+            state.earnedDiceBreakdown['排名錦標賽'] = (state.earnedDiceBreakdown['排名錦標賽'] || 0) + config.dice;
+        }
+
+        const eventRewards = [];
+        if (config.reward > 0) eventRewards.push(`💰${config.reward}`);
+        if (config.gem > 0) eventRewards.push(`💎${config.gem}`);
+        if (config.dice > 0) eventRewards.push(`🎲${config.dice}`);
+
+        updateLogs([{
+            turn: state.turn,
+            event: 'TOURNAMENT',
+            delta_gold: config.reward || 0,
+            current_balance: state.money,
+            detail: `錦標賽達到 Lv.${config.level}，獲得 ${eventRewards.join(' ')}`
+        }]);
+
+        config = state.tournament.integralConfig.find(c => c.level === state.tournament.integral.level);
+        if (!config) break; // Reached Max Level
+    }
+
+    // Refresh Tournament UI
+    renderTournamentUI();
+    updateUI(); // In case money/gems/dice were updated
 }
 
 // --- Dice & Multiplier Logic ---
